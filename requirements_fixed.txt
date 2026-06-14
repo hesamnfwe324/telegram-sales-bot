@@ -11,7 +11,7 @@
   asyncpg>=0.29.0
   alembic>=1.14.0
 
-  # Redis & Queue (no hiredis to avoid C compilation issues)
+  # Redis & Queue (no hiredis extra to avoid C compilation issues)
   redis>=5.0.0,<6.0.0
   fakeredis>=2.26.0
   arq>=0.26.0
@@ -27,7 +27,6 @@
   # Auth & Security
   cryptography>=42.0.0
   PyJWT>=2.9.0
-  # bcrypt must be <4.0.0 — passlib 1.7.4 breaks with bcrypt 4.x
   bcrypt>=3.1.7,<4.0.0
   passlib[bcrypt]>=1.7.4
 
@@ -37,7 +36,7 @@
   structlog>=24.0.0
   python-dotenv>=1.0.0
   pillow>=10.0.0
-  aiofiles>=24.0.0
+  aiofiles~=23.2.1
   tenacity>=8.0.0
   schedule>=1.2.0
   pytz>=2024.0
