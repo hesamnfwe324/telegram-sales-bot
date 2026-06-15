@@ -92,7 +92,9 @@ async def handle_private_message(event, account_id: str):
         # in that case and keep the customer's stored language.
         previous_lang = customer.language_code or "en"
 
-                        detected_lang = await detect_language(text)
+        # Always attempt detection — language.py handles short texts via
+        # Unicode script detection (Persian/Arabic/Cyrillic work even for 1 char).
+        detected_lang = await detect_language(text)
         if detected_lang and detected_lang != previous_lang:
             customer.language_code = detected_lang
             logger.info(
@@ -100,7 +102,8 @@ async def handle_private_message(event, account_id: str):
                 user_id=user_id,
                 from_lang=previous_lang,
                 to_lang=detected_lang,
-)
+            )
+
         language = customer.language_code or "en"
         # ──────────────────────────────────────────────────────────────────
 
