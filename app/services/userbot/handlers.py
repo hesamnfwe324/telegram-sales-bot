@@ -92,17 +92,15 @@ async def handle_private_message(event, account_id: str):
         # in that case and keep the customer's stored language.
         previous_lang = customer.language_code or "en"
 
-        if len(text.strip()) >= 5:
-            detected_lang = await detect_language(text)
-            if detected_lang and detected_lang != previous_lang:
-                customer.language_code = detected_lang
-                logger.info(
-                    "language_switched",
-                    user_id=user_id,
-                    from_lang=previous_lang,
-                    to_lang=detected_lang,
-                )
-
+                        detected_lang = await detect_language(text)
+        if detected_lang and detected_lang != previous_lang:
+            customer.language_code = detected_lang
+            logger.info(
+                "language_switched",
+                user_id=user_id,
+                from_lang=previous_lang,
+                to_lang=detected_lang,
+)
         language = customer.language_code or "en"
         # ──────────────────────────────────────────────────────────────────
 
