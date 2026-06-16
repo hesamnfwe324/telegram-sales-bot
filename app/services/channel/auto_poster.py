@@ -35,7 +35,7 @@ PEAK_WINDOWS = [
     (20, 23, 2),
 ]
 
-MIN_INTERVAL_SECONDS = 90 * 60
+MIN_INTERVAL_SECONDS = 2 * 3600  # exactly 2 hours between posts per channel
 
 TOPICS_POOL = [
     "Free VPS trial for beginners",
@@ -348,12 +348,6 @@ async def run_auto_poster(userbot_manager):
             if await cache_get("system:posting_paused"):
                 logger.info("auto_poster_paused_sleeping_60s")
                 await asyncio.sleep(60)
-                continue
-
-            if not _is_peak_hour():
-                wait = _seconds_to_next_peak() + random.randint(0, 300)
-                logger.info("auto_poster_waiting_for_peak", minutes=round(wait / 60))
-                await asyncio.sleep(wait)
                 continue
 
             channels = await _get_active_channels()
