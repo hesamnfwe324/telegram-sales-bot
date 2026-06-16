@@ -420,9 +420,36 @@ Rules:
 }
 
 
-def get_content_prompt(content_type: str, topic: str, language: str) -> str:
+def get_content_prompt(
+    content_type: str,
+    topic: str,
+    language: str,
+    style_hint: str = "",
+    forbidden_angles: list[str] | None = None,
+    unique_seed: int | None = None,
+) -> str:
     template = CONTENT_TEMPLATES.get(content_type, CONTENT_TEMPLATES["educational"])
-    return template["prompt"].format(topic=topic, language=language)
+    base_prompt = template["prompt"].format(topic=topic, language=language)
+
+    # Uniqueness seed — forces the AI to treat every call as a fresh generation
+    if unique_seed is not None:
+        base_prompt += f"\n\n🔑 GENERATION ID: {unique_seed} — this post MUST be completely different from anything generated before."
+
+    # Style directive
+    if style_hint:
+        base_prompt += f"\n\n🎨 STYLE DIRECTIVE: {style_hint}"
+
+    # Forbidden angles — injected from recent DB posts so AI knows what NOT to repeat
+    if forbidden_angles:
+        forbidden_block = "\n".join(f"  - {a}" for a in forbidden_angles[:20])
+        base_prompt += (
+            "\n\n🚫 STRICT UNIQUENESS RULE — these opening lines were already used in recent posts."
+            " Do NOT repeat the same hook, structure, angle, or phrasing:\n"
+            + forbidden_block
+            + "\nYour post MUST open with a completely different hook and take a fresh angle."
+        )
+
+    return base_prompt
 
 
 def get_all_content_types() -> list[str]:
