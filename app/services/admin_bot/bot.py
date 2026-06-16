@@ -1,3 +1,4 @@
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -43,7 +44,25 @@ def get_dispatcher() -> Dispatcher:
     return _dp
 
 
+def _get_webhook_url() -> str | None:
+    """
+    Return the full webhook URL when running on Render (or any host that
+    sets RENDER_EXTERNAL_URL / WEBHOOK_BASE_URL).
+    Returns None when running locally → fall back to polling.
+    """
+    base = (
+        os.environ.get("WEBHOOK_BASE_URL")       # manual override
+        or os.environ.get("RENDER_EXTERNAL_URL")  # auto-set by Render
+    )
+    if not base:
+        return None
+    base = base.rstrip("/")
+    return f"{base}/tg-api/admin-bot/webhook"
+
+
 async def setup_admin_bot(userbot_manager=None) -> None:
+    import asyncio
+
     bot = get_bot()
     dp = get_dispatcher()
 
@@ -57,16 +76,39 @@ async def setup_admin_bot(userbot_manager=None) -> None:
         await alerts.broadcast_alert(text)
     set_alert_sender(send_to_admins)
 
-    # Always use polling mode (webhook requires proxy routing not available here)
-    try:
-        await bot.delete_webhook(drop_pending_updates=False)
-        logger.info("admin_bot_webhook_deleted")
-    except Exception as e:
-        logger.warning("admin_bot_webhook_delete_failed", error=str(e))
+    webhook_url = _get_webhook_url()
 
-    import asyncio
-    asyncio.create_task(_run_polling(bot, dp))
-    logger.info("admin_bot_started")
+    if webhook_url:
+        # ── Webhook mode (production / Render) ─────────────────────────
+        # Drop any pending updates so the new instance starts clean,
+        # then register the webhook. No polling → no ConflictError.
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("admin_bot_old_webhook_cleared")
+        except Exception as e:
+            logger.warning("admin_bot_delete_webhook_failed", error=str(e))
+
+        try:
+            await bot.set_webhook(
+                url=webhook_url,
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query"],
+            )
+            logger.info("admin_bot_webhook_set", url=webhook_url)
+        except Exception as e:
+            logger.error("admin_bot_set_webhook_failed", error=str(e))
+            # Fall back to polling if webhook setup fails
+            asyncio.create_task(_run_polling(bot, dp))
+    else:
+        # ── Polling mode (local development) ───────────────────────────
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+        except Exception:
+            pass
+        asyncio.create_task(_run_polling(bot, dp))
+        logger.info("admin_bot_polling_started_local")
+
+    logger.info("admin_bot_setup_complete", mode="webhook" if webhook_url else "polling")
 
 
 async def _run_polling(bot: Bot, dp: Dispatcher) -> None:
@@ -87,7 +129,7 @@ async def process_update(update_data: dict) -> None:
 async def shutdown_admin_bot() -> None:
     bot = get_bot()
     try:
-        await bot.delete_webhook()
+        await bot.delete_webhook(drop_pending_updates=False)
         await bot.session.close()
         logger.info("admin_bot_shutdown")
     except Exception as e:
