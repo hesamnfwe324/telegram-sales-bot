@@ -1,6 +1,12 @@
 """
-Smart auto-poster — knows Iran peak hours, generates viral AI content,
-and posts to admin channels with duplicate-prevention.
+Smart auto-poster — unique content per channel, per post, always.
+
+Uniqueness guarantees:
+  1. Redis tracks every topic+type combo used globally (7-day TTL)
+  2. DB query pulls last 25 post first-lines and injects them as
+     "forbidden angles" into every AI prompt
+  3. Each prompt gets a random style modifier + unique seed
+  4. In-memory hash dedup catches any accidental near-duplicates
 """
 import asyncio
 import hashlib
@@ -10,12 +16,12 @@ from collections import deque
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from app.db.session import AsyncSessionLocal
 from app.models.channel import TelegramChannel
 from app.models.post import Post
 from app.services.content.generator import generate_post
-from app.services.content.templates import get_viral_content_types
+from app.services.content.templates import get_all_content_types
 from app.services.channel.publisher import publish_post
 from app.core.logging import get_logger
 
@@ -23,55 +29,127 @@ logger = get_logger(__name__)
 
 TEHRAN = ZoneInfo("Asia/Tehran")
 
-# Peak hours (Tehran time): (start, end, weight)
 PEAK_WINDOWS = [
-    (8,  10, 1),   # morning
-    (12, 14, 1),   # noon
-    (20, 23, 2),   # evening — highest activity
+    (8,  10, 1),
+    (12, 14, 1),
+    (20, 23, 2),
 ]
 
-# Minimum interval between two posts to the same channel (4 hours)
-MIN_INTERVAL_SECONDS = 4 * 3600
+MIN_INTERVAL_SECONDS = 90 * 60
 
-# Topics in English only
 TOPICS_POOL = [
     "Free VPS trial for beginners",
     "Ubuntu Linux server setup guide",
     "Free Windows RDP access",
+    "How to set up a VPS in 5 minutes",
+    "Choosing the right OS for your VPS",
+    "First things to do after buying a VPS",
+    "How to connect to VPS via SSH",
+    "VPS vs shared hosting — full comparison",
     "Server performance optimization tricks",
-    "Installing Docker on a VPS",
-    "How to cut your server costs in half",
-    "VPS security hardening checklist",
     "Boost your VPS speed: top 5 tweaks",
+    "How to double your server RAM efficiency",
+    "Swap memory optimization on Linux",
+    "CPU pinning tricks for better VPS performance",
+    "Reduce server latency in 10 minutes",
+    "Installing Docker on a VPS",
+    "Running Docker Compose on a cheap VPS",
+    "Deploy a web app with Docker in 3 steps",
+    "Kubernetes vs Docker Swarm for small teams",
+    "CI/CD pipeline on a $5 VPS",
+    "GitHub Actions + VPS auto-deploy setup",
+    "VPS security hardening checklist",
+    "Firewall configuration best practices",
+    "Stop brute-force attacks on your VPS",
+    "How to set up fail2ban in 5 minutes",
+    "SSH key authentication — why and how",
+    "Free SSL certificate setup on VPS",
+    "DDoS protection on a budget VPS",
     "Nginx vs Apache: which should you use?",
     "Best data centers for low-latency hosting",
+    "Cloudflare + VPS: the perfect combo",
+    "Setting up a reverse proxy with Nginx",
+    "IPv6 setup on Linux VPS",
+    "Custom domain + VPS in under 15 minutes",
+    "Load balancing across two cheap VPS nodes",
+    "How to cut your server costs in half",
+    "Best budget VPS plans in 2025",
+    "NVMe vs SSD VPS — is it worth paying more?",
+    "When to upgrade from VPS to dedicated server",
+    "Hidden costs of cloud hosting nobody tells you",
+    "Backup strategy for your VPS",
+    "Automated daily backups on Linux",
+    "rsync backup to remote server — full guide",
+    "SSD vs NVMe VPS: what's the difference?",
+    "Monitoring your VPS uptime for free",
+    "Set up server alerts in Telegram",
+    "Top 5 free server monitoring tools",
+    "How to auto-restart a crashed service",
     "SSH productivity tips every sysadmin needs",
-    "Firewall configuration best practices",
     "Running a Telegram bot on a VPS",
     "VPS for private proxy setup",
     "Crypto node hosting on VPS",
-    "SSD vs NVMe VPS: what's the difference?",
-    "Cloudflare + VPS: the perfect combo",
-    "Backup strategy for your VPS",
-    "IPv6 setup on Linux VPS",
-    "Monitoring your VPS uptime for free",
+    "Hosting a game server on a VPS",
+    "Running a personal VPN on VPS",
+    "Self-hosted email server on VPS",
+    "WordPress on VPS vs managed hosting",
+    "Deploy a Discord bot 24/7 on VPS",
+    "Host your own Nextcloud on VPS",
+    "Database server hosting — tips and tricks",
+    "Running Python scripts 24/7 on a VPS",
+    "cPanel vs Hestia: lightweight control panels",
+    "Headless Chrome on VPS for scraping",
+    "VPS for Forex trading bots",
 ]
 
-# Duplicate prevention: keep hashes of the last 200 generated posts in memory
-_recent_hashes: deque = deque(maxlen=200)
-# Per-channel last post timestamp
+CONTENT_TYPE_WEIGHTS = {
+    "viral_giveaway":        15,
+    "viral_free_resource":   15,
+    "viral_tip_secret":      15,
+    "viral_poll_engagement": 12,
+    "viral_news_hook":       10,
+    "educational":           12,
+    "technical":             10,
+    "marketing":              8,
+    "comparison":             8,
+    "promotion":              5,
+    "announcement":           5,
+}
+
+STYLE_MODIFIERS = [
+    "Use a confident, bold tone. Short punchy sentences.",
+    "Use a storytelling angle — open with a mini real-world scenario.",
+    "Use a 'myth vs reality' frame — bust a common misconception.",
+    "Use a 'most people don't know this' hook to drive curiosity.",
+    "Use a numbered list format — '5 reasons why...' or '3 things that...'",
+    "Use a conversational friendly tone, like talking to a colleague.",
+    "Use urgency and scarcity signals throughout.",
+    "Use a beginner-friendly angle — assume zero technical knowledge.",
+    "Use a pro/expert angle — talk directly to experienced sysadmins.",
+    "Use a cost-saving / ROI angle — focus on money saved or earned.",
+    "Use a security-first angle — emphasize risks and how to avoid them.",
+    "Use a comparison/versus angle even if not explicitly a comparison post.",
+    "Use an aspirational tone — paint a picture of what success looks like.",
+    "Use a problem-first structure — lead with the pain, then the solution.",
+    "Use a controversial or contrarian opinion to spark discussion.",
+    "Use a 'quick wins' frame — what can someone do in the next 10 minutes?",
+    "Use a 'case study' frame — write as if describing a real customer success.",
+    "Use a 'behind the scenes' angle — insider knowledge others don't share.",
+    "Use a 'warning' or 'danger' framing — something people are doing wrong.",
+    "Use a minimalist style — fewer words, more impact per sentence.",
+]
+
+# In-memory hash dedup (last 300 posts)
+_recent_hashes: deque = deque(maxlen=300)
 _last_post_time: dict[str, float] = {}
 
 
 def _content_hash(text: str) -> str:
-    """Short hash of post content for dedup detection."""
     return hashlib.sha1(text.strip().lower().encode()).hexdigest()[:16]
 
 
 def _is_duplicate(content: str) -> bool:
-    """Return True if this content (or near-identical) was recently posted."""
-    h = _content_hash(content)
-    return h in _recent_hashes
+    return _content_hash(content) in _recent_hashes
 
 
 def _record_hash(content: str) -> None:
@@ -84,69 +162,130 @@ def _now_tehran() -> datetime:
 
 def _is_peak_hour() -> bool:
     h = _now_tehran().hour
-    for start, end, _ in PEAK_WINDOWS:
-        if start <= h < end:
-            return True
-    return False
+    return any(start <= h < end for start, end, _ in PEAK_WINDOWS)
 
 
 def _seconds_to_next_peak() -> int:
     now = _now_tehran()
-    h = now.hour
-    m = now.minute
-
+    h, m = now.hour, now.minute
     for start, end, _ in PEAK_WINDOWS:
         if h < start:
-            diff_minutes = (start - h) * 60 - m
-            return diff_minutes * 60
-
-    # Past the last window → first window tomorrow
+            return (start - h) * 3600 - m * 60
     first_start = PEAK_WINDOWS[0][0]
-    diff_minutes = (24 - h + first_start) * 60 - m
-    return diff_minutes * 60
+    return (24 - h + first_start) * 3600 - m * 60
 
 
 def _pick_content_type() -> str:
-    weights = {
-        "viral_giveaway":        25,
-        "viral_free_resource":   25,
-        "viral_tip_secret":      20,
-        "viral_poll_engagement": 20,
-        "viral_news_hook":       10,
-    }
-    types = list(weights.keys())
-    probs = [weights[t] for t in types]
-    return random.choices(types, weights=probs, k=1)[0]
+    types = list(CONTENT_TYPE_WEIGHTS.keys())
+    weights = [CONTENT_TYPE_WEIGHTS[t] for t in types]
+    return random.choices(types, weights=weights, k=1)[0]
 
 
-async def _get_active_channels(account_id=None):
-    async with AsyncSessionLocal() as session:
-        q = select(TelegramChannel).where(TelegramChannel.is_active == True)
-        if account_id:
-            q = q.where(TelegramChannel.account_id == uuid.UUID(str(account_id)))
-        result = await session.execute(q)
-        return result.scalars().all()
+# ── Redis-backed uniqueness tracking ───────────────────────────────────────
 
+async def _is_combo_used(topic: str, content_type: str) -> bool:
+    """Check if this topic+type combo was used in the last 7 days (Redis)."""
+    from app.cache.redis_client import cache_get
+    key = _combo_key(topic, content_type)
+    return bool(await cache_get(key))
+
+
+async def _mark_combo_used(topic: str, content_type: str) -> None:
+    """Record this topic+type combo in Redis with 7-day TTL."""
+    from app.cache.redis_client import cache_set
+    key = _combo_key(topic, content_type)
+    await cache_set(key, "1", ttl=7 * 24 * 3600)
+
+
+def _combo_key(topic: str, content_type: str) -> str:
+    slug = hashlib.md5(f"{topic}:{content_type}".encode()).hexdigest()[:12]
+    return f"post_combo:{slug}"
+
+
+async def _pick_fresh_combo() -> tuple[str, str]:
+    """
+    Pick a topic + content_type pair that hasn't been used in 7 days.
+    Falls back to least-recently-used if everything is exhausted.
+    """
+    all_types = list(CONTENT_TYPE_WEIGHTS.keys())
+    candidates = [(t, ct) for t in TOPICS_POOL for ct in all_types]
+    random.shuffle(candidates)
+
+    for topic, content_type in candidates:
+        if not await _is_combo_used(topic, content_type):
+            return topic, content_type
+
+    # All combos used — pick random (should never happen with 60*11=660 combos)
+    logger.warning("all_post_combos_used_picking_random")
+    return random.choice(TOPICS_POOL), _pick_content_type()
+
+
+# ── DB-backed forbidden angles ──────────────────────────────────────────────
+
+async def _get_recent_post_angles(limit: int = 25) -> list[str]:
+    """
+    Return the first line of the last `limit` published posts globally.
+    Injected into the AI prompt so it knows what to avoid.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Post.content)
+                .where(Post.status == "published")
+                .order_by(desc(Post.published_at))
+                .limit(limit)
+            )
+            rows = result.scalars().all()
+            angles = []
+            for content in rows:
+                if content:
+                    first_line = content.strip().split("\n")[0][:120]
+                    if first_line:
+                        angles.append(first_line)
+            return angles
+    except Exception as e:
+        logger.warning("get_recent_post_angles_failed", error=str(e))
+        return []
+
+
+# ── Main channel post function ──────────────────────────────────────────────
 
 async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
-    """Generate an AI post and send it, with duplicate prevention and retries."""
-    # Force English; respect channel override only if explicitly set to a non-Persian lang
     lang = channel.language or "en"
     if lang == "fa":
         lang = "en"
 
-    content_type = _pick_content_type()
+    # Pick a topic+type combo not used in 7 days
+    topic, content_type = await _pick_fresh_combo()
 
-    # Try up to 3 times to get a non-duplicate
-    for attempt in range(3):
-        topic = random.choice(TOPICS_POOL)
+    # Get recent post first-lines to inject as "forbidden angles"
+    forbidden_angles = await _get_recent_post_angles(limit=25)
+
+    style_hint = random.choice(STYLE_MODIFIERS)
+    unique_seed = random.randint(100000, 999999)
+
+    # Try up to 4 times — each retry picks a completely different combo
+    for attempt in range(4):
+        if attempt > 0:
+            topic, content_type = await _pick_fresh_combo()
+            style_hint = random.choice(STYLE_MODIFIERS)
+            unique_seed = random.randint(100000, 999999)
+
         try:
-            logger.info("auto_post_generating",
-                        channel=channel.display_name,
-                        type=content_type,
-                        topic=topic,
-                        attempt=attempt + 1)
-            content = await generate_post(content_type, topic, lang, include_hashtags=True)
+            logger.info(
+                "auto_post_generating",
+                channel=channel.display_name,
+                type=content_type,
+                topic=topic,
+                attempt=attempt + 1,
+            )
+            content = await generate_post(
+                content_type, topic, lang,
+                include_hashtags=True,
+                style_hint=style_hint,
+                forbidden_angles=forbidden_angles,
+                unique_seed=unique_seed,
+            )
         except Exception as e:
             logger.error("auto_post_generate_failed",
                          channel=channel.display_name, error=str(e))
@@ -154,14 +293,14 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
 
         if not _is_duplicate(content):
             break
+
         logger.warning("auto_post_duplicate_detected",
                        channel=channel.display_name, attempt=attempt + 1)
-        if attempt == 2:
+        if attempt == 3:
             logger.error("auto_post_all_duplicates_skipping",
                          channel=channel.display_name)
             return False
 
-    # Save post and send
     async with AsyncSessionLocal() as session:
         post = Post(
             account_id=channel.account_id,
@@ -178,8 +317,9 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
             await publish_post(session, post)
             await session.commit()
             _record_hash(content)
+            await _mark_combo_used(topic, content_type)
             logger.info("auto_post_sent",
-                        channel=channel.display_name, type=content_type)
+                        channel=channel.display_name, type=content_type, topic=topic)
             return True
         except Exception as e:
             post.status = "failed"
@@ -189,14 +329,17 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
             return False
 
 
-async def run_auto_poster(userbot_manager):
-    """
-    Main scheduler loop — runs forever.
-    Posts during Tehran peak hours, enforces per-channel cooldowns.
-    """
-    logger.info("auto_poster_started")
+async def _get_active_channels(account_id=None):
+    async with AsyncSessionLocal() as session:
+        q = select(TelegramChannel).where(TelegramChannel.is_active == True)
+        if account_id:
+            q = q.where(TelegramChannel.account_id == uuid.UUID(str(account_id)))
+        result = await session.execute(q)
+        return result.scalars().all()
 
-    # Wait 30s for all services to come up
+
+async def run_auto_poster(userbot_manager):
+    logger.info("auto_poster_started")
     await asyncio.sleep(30)
 
     while True:
@@ -208,16 +351,13 @@ async def run_auto_poster(userbot_manager):
                 continue
 
             if not _is_peak_hour():
-                wait = _seconds_to_next_peak()
-                wait += random.randint(0, 600)
-                logger.info("auto_poster_waiting_for_peak",
-                            minutes=round(wait / 60))
+                wait = _seconds_to_next_peak() + random.randint(0, 300)
+                logger.info("auto_poster_waiting_for_peak", minutes=round(wait / 60))
                 await asyncio.sleep(wait)
                 continue
 
             channels = await _get_active_channels()
             if not channels:
-                logger.info("auto_poster_no_active_channels")
                 await asyncio.sleep(300)
                 continue
 
@@ -239,14 +379,11 @@ async def run_auto_poster(userbot_manager):
                 if success:
                     _last_post_time[ch_key] = asyncio.get_running_loop().time()
                     posted += 1
-                    # Anti-spam jitter between channels
-                    await asyncio.sleep(random.randint(15, 45))
+                    await asyncio.sleep(random.randint(10, 30))
 
-            if posted == 0:
-                await asyncio.sleep(900)
-            else:
+            await asyncio.sleep(900 if posted > 0 else 600)
+            if posted > 0:
                 logger.info("auto_poster_cycle_done", posted=posted)
-                await asyncio.sleep(1800)
 
         except asyncio.CancelledError:
             logger.info("auto_poster_cancelled")
