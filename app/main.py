@@ -131,19 +131,13 @@ async def healthz():
 
 
 
-  @app.api_route("/api/healthz", methods=["GET", "HEAD"])
-  async def healthz():
-      return {"status": "ok", "app": settings.APP_NAME}
+@app.api_route("/", methods=["GET", "HEAD"])
+async def health_root():
+    """Root / health check — GET and HEAD for Render and UptimeRobot."""
+    return {"status": "ok", "app": settings.APP_NAME}
 
 
-  @app.api_route("/", methods=["GET", "HEAD"])
-  async def health_root():
-      """Root health check for Render and UptimeRobot."""
-      return {"status": "ok", "app": settings.APP_NAME}
-
-
-  @app.api_route("/health", methods=["GET", "HEAD"])
-  async def health_check():
-      """Health endpoint for Render and UptimeRobot."""
-      return {"status": "ok", "app": settings.APP_NAME}
-  
+@app.api_route("/health", methods=["GET", "HEAD"])
+async def health_check():
+    """Health endpoint — GET and HEAD for Render and UptimeRobot."""
+    return {"status": "ok", "app": settings.APP_NAME}
