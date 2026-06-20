@@ -1,460 +1,484 @@
 CONTENT_TEMPLATES = {
-    "educational": {
-        "prompt": """Create an educational post about "{topic}" for a premium VPS/Cloud Hosting Telegram channel.
+      "educational": {
+          "prompt": """Create an educational post about "{topic}" for a premium VPS/Cloud Hosting Telegram channel.
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-FORMATTING — follow this exact visual style:
+  FORMATTING — follow this exact visual style:
 
-```
-🧠 [CATCHY TITLE IN CAPS]
+  ```
+  🧠 [CATCHY TITLE IN CAPS — make it unmissable]
 
-━━━━━━━━━━━━━━━━━━━━━
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[1–2 line hook that makes the reader need to keep reading]
+  [1–2 line hook — the single most important insight a reader gets from this]
 
-📌 [Section heading]
-[Content — 2–3 short lines]
+  📌 [Section heading]
+  [Content — 2–3 short, punchy lines]
 
-📌 [Section heading]
-[Content — 2–3 short lines]
+  📌 [Section heading]
+  [Content — 2–3 short, punchy lines]
 
-📌 [Section heading]
-[Content — 2–3 short lines]
+  📌 [Section heading]
+  [Content — 2–3 short, punchy lines]
 
-━━━━━━━━━━━━━━━━━━━━━
-💡 Pro Tip: [one punchy actionable tip]
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  💡 Pro Tip: [one concrete, actionable tip that adds real value]
 
-🚀 [Call to action line]
-```
+  🚀 [Strong CTA — drive engagement or channel growth]
 
-Rules:
-- Emoji dividers (━━━) between sections create premium look — always use them
-- Each section starts with 📌 or a relevant emoji (🔒 for security, ⚡ for speed, 💰 for cost)
-- Short punchy sentences — max 2 lines per section
-- End with a strong CTA
-- Length: 200–320 words
-- Topic: {topic}""",
-    },
+  🔖 Save this — you'll thank yourself later.
+  ```
 
-    "marketing": {
-        "prompt": """Create a marketing post about "{topic}" for a premium VPS/Cloud Hosting Telegram channel.
+  Rules:
+  - Emoji dividers (━━━) between sections create premium look — always use them
+  - Each section starts with 📌 or a relevant emoji (🔒 security, ⚡ speed, 💰 cost, 🛡️ protection)
+  - Short punchy sentences — max 2 lines per section
+  - Save this post trigger at the end boosts channel saves
+  - Length: 220–340 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+      "marketing": {
+          "prompt": """Create a high-converting marketing post about "{topic}" for a premium VPS/Cloud Hosting Telegram channel.
 
-FORMATTING — follow this exact visual style:
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-```
-🔥 [BOLD CLAIM OR OFFER — ALL CAPS]
+  FORMATTING — follow this exact visual style:
 
-[Pain point or question — 1 line that hits hard]
+  ```
+  🔥 [BOLD VALUE CLAIM — ALL CAPS, no fluff]
 
-✅  [Benefit 1 — short and punchy]
-✅  [Benefit 2 — short and punchy]
-✅  [Benefit 3 — short and punchy]
-✅  [Benefit 4 — short and punchy]
+  [Pain point question — 1 devastating line that hits hard]
 
-─────────────────────
-⚡ [Specific stat or proof point]
-─────────────────────
+  ✅  [Benefit 1 — specific number or concrete detail]
+  ✅  [Benefit 2 — specific number or concrete detail]
+  ✅  [Benefit 3 — specific number or concrete detail]
+  ✅  [Benefit 4 — specific number or concrete detail]
+  ✅  [Benefit 5 — specific number or concrete detail]
 
-[1–2 lines of social proof or urgency]
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ⚡ [Credible stat or proof point — uptime %, speed, price, response time]
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-👉 [Strong single CTA]
-```
+  [1–2 lines of urgency or social proof]
 
-Rules:
-- Opening line must create immediate desire or FOMO
-- Each ✅ benefit must have a specific number or concrete detail (not vague)
-- The separator line ─────── makes it look premium
-- ⚡ stat must feel credible (uptime %, response time, price)
-- Length: 150–220 words
-- Topic: {topic}""",
-    },
+  👉 [Single strong CTA — make it irresistible]
+  📲 Share this with someone who needs a reliable server.
+  ```
 
-    "technical": {
-        "prompt": """Create a technical tutorial post about "{topic}" for developers and sysadmins on Telegram.
+  Rules:
+  - Opening line must create immediate desire or FOMO
+  - Each ✅ benefit must have a specific number or concrete detail
+  - ⚡ stat must feel credible and impressive
+  - Length: 160–240 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+      "technical": {
+          "prompt": """Create a technical step-by-step tutorial post about "{topic}" for developers and sysadmins on Telegram.
 
-FORMATTING — follow this exact visual style:
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-```
-⚙️ [TECHNICAL TITLE — specific and clear]
+  FORMATTING — follow this exact visual style:
 
-━━━━━━━━━━━━━━━━━━━━━
-🎯 The Problem
-[1–2 lines: what pain does this solve?]
+  ```
+  ⚙️ [TECHNICAL TITLE — specific, clear, results-focused]
 
-━━━━━━━━━━━━━━━━━━━━━
-🛠 The Fix
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🎯 The Problem
+  [1–2 lines: what pain or challenge does this solve?]
 
-Step 1 → [action]
-`command or code here`
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🛠 The Solution
 
-Step 2 → [action]
-`command or code here`
+  Step 1 → [clear action label]
+  `command or code here`
 
-Step 3 → [action]
-`command or code here`
+  Step 2 → [clear action label]
+  `command or code here`
 
-━━━━━━━━━━━━━━━━━━━━━
-⚠️ Common Mistake: [what to avoid]
-💡 Pro Tip: [extra value]
+  Step 3 → [clear action label]
+  `command or code here`
 
-🔖 Save this post — you'll need it.
-```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ⚠️ Common Mistake: [what most people get wrong]
+  💡 Pro Tip: [the insider knowledge that changes everything]
 
-Rules:
-- Use → arrows for step flow (looks clean in Telegram)
-- Always include real commands in backtick code blocks
-- ⚠️ and 💡 lines add credibility and make it worth saving
-- End with "Save this post" — triggers the save behavior
-- Length: 300–450 words
-- Topic: {topic}""",
-    },
+  📌 Expected Result: [what success looks like in 1 line]
 
-    "announcement": {
-        "prompt": """Create a company announcement about "{topic}" for a VPS/Cloud Hosting Telegram channel.
+  🔖 Save this — it's the guide you'll reopen at 2am.
+  ```
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  Rules:
+  - → arrows for step flow (clean in Telegram)
+  - Real commands in backtick code blocks — no fake commands
+  - ⚠️ and 💡 lines add credibility and make it worth saving
+  - Save trigger at the end drives bookmarks
+  - Length: 300–450 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-FORMATTING — follow this exact visual style:
+      "announcement": {
+          "prompt": """Create a company announcement post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-```
-📣 ANNOUNCEMENT
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-━━━━━━━━━━━━━━━━━━━━━
+  FORMATTING — follow this exact visual style:
 
-[ONE bold sentence stating the news — make it undeniable]
+  ```
+  📣 OFFICIAL ANNOUNCEMENT
 
-━━━━━━━━━━━━━━━━━━━━━
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🗓  What's changing: [1–2 lines]
-👥  Who it affects: [1 line]
-⏱  When: [specific timeframe]
-🎁  What you get: [the benefit for the customer]
+  [ONE bold sentence stating the news — make it undeniable and exciting]
 
-━━━━━━━━━━━━━━━━━━━━━
-👇 [Single clear action or next step]
-```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Rules:
-- The top box (━━━) framing creates visual authority
-- Each detail line starts with a relevant emoji + label
-- Tone: clear, direct, no fluff
-- Length: 100–180 words
-- Topic: {topic}""",
-    },
+  🗓  What's new: [1–2 lines]
+  👥  Who benefits: [1 line]
+  ⏱  When: [specific timeframe]
+  🎁  What you get: [the tangible benefit for the customer]
+  🔗  How to access: [direct link or action step]
 
-    "comparison": {
-        "prompt": """Create a comparison post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  👇 [Single clear next step — tap, click, or share]
+  📲 Forward this to a friend who needs this.
+  ```
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  Rules:
+  - Top frame (━━━) creates visual authority
+  - Each line starts with a relevant emoji + label
+  - Tone: direct, exciting, zero fluff
+  - Length: 120–200 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-FORMATTING — follow this exact visual style:
+      "comparison": {
+          "prompt": """Create a comparison post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-```
-⚖️ [OPTION A] vs [OPTION B]
-━━━━━━━━━━━━━━━━━━━━━
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-[1 line hook — why this comparison matters]
+  FORMATTING — follow this exact visual style:
 
-━━━━━━━━━━━━━━━━━━━━━
-🔵 [OPTION A]
-➕ [Strength 1]
-➕ [Strength 2]
-➖ [Weakness]
-💰 Price range: [...]
+  ```
+  ⚖️ [OPTION A] vs [OPTION B] — THE REAL DIFFERENCE
 
-🔴 [OPTION B]
-➕ [Strength 1]
-➕ [Strength 2]
-➖ [Weakness]
-💰 Price range: [...]
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-━━━━━━━━━━━━━━━━━━━━━
-🏆 Verdict:
-[2–3 lines: who should pick which and why]
+  [1 line hook — why this comparison matters to your server decision]
 
-💬 Which do YOU use? Comment below 👇
-```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Rules:
-- Color-coded sections (🔵 vs 🔴) make it instantly scannable
-- ➕ and ➖ are cleaner than ✅/❌ for comparison
-- Verdict must give a clear winner for specific use cases
-- Length: 200–320 words
-- Topic: {topic}""",
-    },
+  🔵 [OPTION A]
+  ✅ [Advantage 1]
+  ✅ [Advantage 2]
+  ❌ [Main weakness]
 
-    "promotion": {
-        "prompt": """Create a limited-time promotional post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
+  🔴 [OPTION B]
+  ✅ [Advantage 1]
+  ✅ [Advantage 2]
+  ❌ [Main weakness]
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🏆 Winner for most users: [OPTION X]
+  Why: [1–2 concrete reason lines]
 
-FORMATTING — follow this exact visual style:
+  💬 Which one do YOU use? Drop your answer below.
+  🔖 Save this — share it before the next server debate.
+  ```
 
-```
-🎯 LIMITED OFFER — [DISCOUNT OR DEAL IN CAPS]
+  Rules:
+  - Always declare a winner — fence-sitting loses readers
+  - 💬 engagement line triggers comments
+  - Length: 200–300 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-⏳ [Time limit — e.g., "Ends in 48 hours" or "First 50 users only"]
+      "promotion": {
+          "prompt": """Create a promotional offer post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-━━━━━━━━━━━━━━━━━━━━━
-📦 What you get:
-   ▸ [Item 1 with specific spec]
-   ▸ [Item 2 with specific spec]
-   ▸ [Item 3 with specific spec]
-   ▸ [Item 4 with specific spec]
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-💵 Price: ~~[Original]~~ → [Deal price]
+  FORMATTING — follow this exact visual style:
 
-━━━━━━━━━━━━━━━━━━━━━
-🔥 [Urgency line — why act now]
+  ```
+  🎁 LIMITED TIME OFFER — DON'T SCROLL PAST THIS
 
-👉 [Single CTA with link placeholder or action]
-```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Rules:
-- ~~strikethrough~~ original price creates visual contrast (works in Telegram)
-- ▸ bullets look more premium than dashes
-- ⏳ at the top creates immediate urgency before they even read the offer
-- Length: 130–200 words
-- Topic: {topic}""",
-    },
+  [1–2 lines: the deal in plain language — price, what you get, why now]
 
-    "viral_giveaway": {
-        "prompt": """Write a FREE giveaway post for a Telegram VPS/server channel.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  📦 What's included:
+  ✅ [Feature 1 — with spec or value]
+  ✅ [Feature 2 — with spec or value]
+  ✅ [Feature 3 — with spec or value]
+  ✅ [Feature 4 — with spec or value]
 
-FORMATTING — follow this exact visual style:
+  ⏳ Offer expires: [timeframe — create urgency]
+  💰 Price: [price point — anchor with original price if discounted]
 
-```
-🚨🎁 FREE [THING] GIVEAWAY — [NUMBER] SPOTS LEFT 🎁🚨
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🔗 [Strong single CTA — claim now / get yours / activate deal]
+  📲 Tag a friend who needs a server upgrade.
+  ```
 
-[One-line hook that creates instant FOMO]
+  Rules:
+  - Open with urgency — the deal must feel like it expires
+  - Each ✅ feature must have a concrete spec or value
+  - Anchor pricing psychology — show what they save
+  - Length: 150–220 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-━━━━━━━━━━━━━━━━━━━━━
-🏆 What you win:
-   🔹 [Specific prize 1]
-   🔹 [Specific prize 2]
-   🔹 [Specific prize 3]
+      "viral_giveaway": {
+          "prompt": """Create a viral giveaway post about "{topic}" for a VPS/Cloud Hosting Telegram channel to maximize new member joins.
 
-⚡ How to enter (takes 10 seconds):
-   1️⃣  Join this channel
-   2️⃣  Comment "IN" below
-   3️⃣  That's it. Done.
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-━━━━━━━━━━━━━━━━━━━━━
-⏳ Closes when [number] people comment
-🎰 Winners picked randomly & announced here
+  FORMATTING — follow this exact viral style:
 
-WHY are we doing this? [1-line authentic reason]
+  ```
+  🎉 FREE [PRIZE] GIVEAWAY — ENDING SOON
 
-🔔 Share with a friend who needs this 👇
-```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Rules:
-- 🔹 bullets inside the prize box look clean and premium
-- 1️⃣2️⃣3️⃣ number emojis for steps feel official
-- "WHY" line is critical — it makes the giveaway feel real not spammy
-- End with share nudge
-- Length: 120–170 words""",
-    },
+  [1 line — the most exciting thing about this prize]
 
-    "viral_poll_engagement": {
-        "prompt": """Write a highly engaging POLL/QUESTION post for a Telegram VPS/server channel.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Topic hint: {topic}
+  🎯 What you win:
+  ✅ [Prize detail 1 — specific and valuable]
+  ✅ [Prize detail 2 — specific and valuable]
+  ✅ [Prize detail 3 — specific and valuable]
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  🔑 How to enter (takes 30 seconds):
+  1️⃣ Join this channel
+  2️⃣ Forward this post to 1 friend
+  3️⃣ Drop a ✅ in the comments
 
-FORMATTING — follow this exact visual style:
+  ⏳ Winners announced: [timeframe]
+  👥 [Number] winners selected randomly
 
-```
-🗳️ QUICK POLL — WE NEED YOUR ANSWER
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🏆 Don't miss this — share now before it ends!
+  ```
 
-[One punchy provocative question about servers/VPS/hosting]
+  Rules:
+  - Prize must feel genuinely valuable (VPS, RDP, server time, bandwidth)
+  - Entry steps drive sharing = channel growth
+  - Length: 150–220 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-━━━━━━━━━━━━━━━━━━━━━
-Vote by replying:
+      "viral_free_resource": {
+          "prompt": """Create a viral free resource post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-🅰️  [Option A — specific, relatable]
-🅱️  [Option B — specific, relatable]
-🅾️  [Option C — the unexpected one]
-🆇  [Option D — "None / something else"]
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-━━━━━━━━━━━━━━━━━━━━━
-💬 [Why you're asking — 1–2 lines. Makes it feel real.]
+  FORMATTING — follow this exact viral style:
 
-📊 We'll share the results + a FREE tip based on the top answer.
+  ```
+  🆓 FREE [RESOURCE NAME] — SAVE THIS NOW
 
-🔁 Forward to your sysadmin friends — the more votes, the better the data!
-```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Rules:
-- Letter emoji buttons (🅰️🅱️🅾️🆇) are unique and eye-catching
-- The "free tip based on results" promise drives votes
-- Forward nudge at the end is organic growth
-- Length: 80–130 words""",
-    },
+  [1 line — the specific value someone gets in 60 seconds]
 
-    "viral_tip_secret": {
-        "prompt": """Write a "secret tip / hidden trick" post about VPS, servers, or hosting.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Topic: {topic}
+  📦 What's inside:
+  ✅ [Resource item 1 — specific and actionable]
+  ✅ [Resource item 2 — specific and actionable]
+  ✅ [Resource item 3 — specific and actionable]
+  ✅ [Resource item 4 — specific and actionable]
+  ✅ [Resource item 5 — specific and actionable]
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  💡 Why this matters:
+  [2–3 lines: the problem this solves + who it's for]
 
-FORMATTING — follow this exact visual style:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  📥 How to get it: [1-step clear instruction]
+  🔖 Save this post — share it with your team.
+  ```
 
-```
-🤫 MOST SYSADMINS DON'T KNOW THIS...
+  Rules:
+  - Resource must feel like a real, high-value cheat sheet or guide
+  - "Save this now" drives bookmarks — use it
+  - Length: 180–260 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-[Bold hook — the promise of the secret. 1 line.]
+      "viral_tip_secret": {
+          "prompt": """Create a viral insider tip/secret post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-━━━━━━━━━━━━━━━━━━━━━
-🔍 The Problem Nobody Talks About:
-[2–3 lines describing the pain point]
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-━━━━━━━━━━━━━━━━━━━━━
-💡 The Secret Fix:
-[Clear explanation — be specific]
+  FORMATTING — follow this exact viral style:
 
-```bash
-[actual command or code]
-```
+  ```
+  🤫 [NUMBER] SERVER SECRETS MOST ADMINS DON'T KNOW
 
-━━━━━━━━━━━━━━━━━━━━━
-📈 Result: [specific benefit — time saved / money saved / % improvement]
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔖 SAVE this. You'll thank yourself later.
-↩️  Forward to anyone running a server.
-```
+  [1 shocking hook — the insight that makes people stop scrolling]
 
-Rules:
-- The "problem nobody talks about" framing hooks curiosity
-- MUST include a real command or concrete example — vague tips get ignored
-- "SAVE this" + "Forward" double CTA at end maximizes reach
-- Length: 150–220 words""",
-    },
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    "viral_free_resource": {
-        "prompt": """Write a post offering a FREE valuable resource related to VPS/servers/Linux.
+  🔍 Secret #1: [Name]
+  [2–3 lines of real insider insight]
 
-Topic hint: {topic}
+  🔍 Secret #2: [Name]
+  [2–3 lines of real insider insight]
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  🔍 Secret #3: [Name]
+  [2–3 lines of real insider insight]
 
-FORMATTING — follow this exact visual style:
+  🔍 Secret #4: [Name]
+  [2–3 lines of real insider insight]
 
-```
-📦 FREE [RESOURCE TYPE] DROP
-━━━━━━━━━━━━━━━━━━━━━
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  💬 Which one surprised you most? Reply below.
+  🔖 Save this — and share it with your server team.
+  ```
 
-[1-line hook: the ONE thing that makes this unmissable]
+  Rules:
+  - Secrets must be genuinely non-obvious — not beginner basics
+  - 💬 engagement line drives comments
+  - Length: 250–380 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-━━━━━━━━━━━━━━━━━━━━━
-✅ What's inside:
+      "viral_poll_engagement": {
+          "prompt": """Create a viral poll/engagement post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-   ✦ [Item 1 — specific, not vague]
-   ✦ [Item 2 — specific, not vague]
-   ✦ [Item 3 — specific, not vague]
-   ✦ [Item 4 — specific, not vague]
-   ✦ [Item 5 — specific, not vague]
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-━━━━━━━━━━━━━━━━━━━━━
-🙋 Perfect for: [who needs this — 1 line]
-⚡ Saves you: [time/money/effort — be specific]
+  FORMATTING — follow this exact viral style:
 
-━━━━━━━━━━━━━━━━━━━━━
-💬 Reply "SEND" and I'll DM it to you.
-📢 Share with your team — this one's too good to keep.
-```
+  ```
+  📊 QUICK POLL — VOTE NOW
 
-Rules:
-- ✦ star bullets look unique and premium (different from boring checkmarks)
-- "SEND" reply CTA is the best engagement driver on Telegram
-- "Too good to keep" share nudge is subtle but effective
-- Length: 140–210 words""",
-    },
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    "viral_news_hook": {
-        "prompt": """Write a BREAKING NEWS or TREND post about the VPS/cloud/tech world.
+  [1 polarizing question about {topic} — something every sysadmin has an opinion on]
 
-Topic: {topic}
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
+  🅰️ [Option A — specific and opinionated]
+  🅱️ [Option B — specific and opinionated]
+  🅲 [Option C — the wildcard answer]
+  🅳 [Option D — the "it depends" answer done interestingly]
 
-FORMATTING — follow this exact visual style:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  💬 Drop your letter in the comments + tell us WHY.
+  📊 Results posted when we hit [number] votes!
 
-```
-🚨 BREAKING — [HEADLINE IN CAPS]
+  [1–2 lines of educational context that makes voting more interesting]
+  🔗 Share this with your team and see who disagrees.
+  ```
 
-[subheadline — 1 line adding detail or context]
+  Rules:
+  - Question must be genuinely polarizing — not obvious
+  - Options must be distinct and interesting
+  - Comments driver is required
+  - Length: 150–220 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
 
-━━━━━━━━━━━━━━━━━━━━━
-📰 What happened:
-[2–3 lines. Facts only. Clear and direct.]
+      "viral_news_hook": {
+          "prompt": """Create a viral news-hook post about "{topic}" for a VPS/Cloud Hosting Telegram channel.
 
-━━━━━━━━━━━━━━━━━━━━━
-💥 Why it matters to YOU:
-[2–3 lines. Practical impact for VPS/server users.]
+  LANGUAGE RULE: Write ENTIRELY in English. No Persian, Arabic, or non-Latin characters.
 
-━━━━━━━━━━━━━━━━━━━━━
-🧠 Our take:
-[2–3 lines of expert opinion — confident, direct voice]
+  FORMATTING — follow this exact viral style:
 
-━━━━━━━━━━━━━━━━━━━━━
-💬 What do you think? Drop your reaction below 👇
-🔔 Share this with your network — they need to know.
-```
+  ```
+  🚨 [BIG NEWS OR TREND] — What This Means For YOUR Server
 
-Rules:
-- 4-section structure (What / Why it matters / Our take / CTA) = authority format
-- "Our take" positions the channel as an expert voice, not just a news aggregator
-- Share nudge and comment CTA both at end for max engagement
-- Length: 130–190 words""",
-    },
-}
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+  [1–2 lines: the news or trend + why it matters RIGHT NOW]
 
-def get_content_prompt(
-    content_type: str,
-    topic: str,
-    language: str,
-    style_hint: str = "",
-    forbidden_angles: list[str] | None = None,
-    unique_seed: int | None = None,
-) -> str:
-    template = CONTENT_TEMPLATES.get(content_type, CONTENT_TEMPLATES["educational"])
-    base_prompt = template["prompt"].format(topic=topic, language=language)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Uniqueness seed — forces the AI to treat every call as a fresh generation
-    if unique_seed is not None:
-        base_prompt += f"\n\n🔑 GENERATION ID: {unique_seed} — this post MUST be completely different from anything generated before."
+  📍 What happened:
+  [2–3 lines of clear context]
 
-    # Style directive
-    if style_hint:
-        base_prompt += f"\n\n🎨 STYLE DIRECTIVE: {style_hint}"
+  ⚠️ What it means for you:
+  [2–3 lines of direct practical impact]
 
-    # Forbidden angles — injected from recent DB posts so AI knows what NOT to repeat
-    if forbidden_angles:
-        forbidden_block = "\n".join(f"  - {a}" for a in forbidden_angles[:20])
-        base_prompt += (
-            "\n\n🚫 STRICT UNIQUENESS RULE — these opening lines were already used in recent posts."
-            " Do NOT repeat the same hook, structure, angle, or phrasing:\n"
-            + forbidden_block
-            + "\nYour post MUST open with a completely different hook and take a fresh angle."
-        )
+  ✅ What to do now:
+  [3–4 concrete action steps with → arrows]
 
-    return base_prompt
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  💬 Does this affect your setup? Comment below.
+  🔖 Save this + share before everyone else finds out.
+  ```
 
+  Rules:
+  - Open with urgency — this is breaking or trending
+  - Action steps are concrete and immediately doable
+  - Length: 220–320 words
+  - Topic: {topic}
+  - Style: {style_hint}
+  - Unique angle seed: {unique_seed}
+  - Avoid these angles (already used): {forbidden_angles}""",
+      },
+  }
 
-def get_all_content_types() -> list[str]:
-    return list(CONTENT_TEMPLATES.keys())
 
+  def get_content_prompt(
+      content_type: str,
+      topic: str,
+      language: str = "en",
+      style_hint: str = "",
+      forbidden_angles: list[str] | None = None,
+      unique_seed: int | None = None,
+  ) -> str:
+      template = CONTENT_TEMPLATES.get(content_type, CONTENT_TEMPLATES["educational"])
+      prompt = template["prompt"].format(
+          topic=topic,
+          language=language,
+          style_hint=style_hint or "default",
+          forbidden_angles=", ".join(forbidden_angles or []) or "none",
+          unique_seed=unique_seed or 0,
+      )
+      return prompt
 
-def get_viral_content_types() -> list[str]:
-    return ["viral_giveaway", "viral_poll_engagement", "viral_tip_secret", "viral_free_resource", "viral_news_hook"]
+
+  def get_all_content_types() -> list[str]:
+      return list(CONTENT_TEMPLATES.keys())
+  
