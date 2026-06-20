@@ -6,16 +6,10 @@
     - Post 2 (text):  text only — no media
     - Alternates per channel automatically
 
-  Image generation:
-    - Uses Pollinations.ai (free, no API key, Flux model)
-    - Every image is AI-generated from a topic-specific prompt
-    - Random seed per post = zero repetition ever
-
-  Uniqueness guarantees:
-    1. Redis tracks every topic+type combo used globally (7-day TTL)
-    2. DB query pulls last 25 post first-lines as "forbidden angles"
-    3. Each prompt gets a random style modifier + unique seed
-    4. In-memory hash dedup catches any accidental near-duplicates
+  Image generation (Pollinations.ai / Flux — free, no API key):
+    - 3 different URLs generated per post (different seeds + prompt styles)
+    - publisher.py tries them in order — first success wins
+    - Zero repetition guaranteed by unique seeds
   """
   import asyncio
   import hashlib
@@ -32,7 +26,7 @@
   from app.models.post import Post
   from app.services.content.generator import generate_post
   from app.services.content.templates import get_all_content_types
-  from app.services.channel.publisher import publish_post
+  from app.services.channel.publisher import publish_post, _URL_SEPARATOR
   from app.core.logging import get_logger
 
   logger = get_logger(__name__)
@@ -66,7 +60,7 @@
       "Running Docker Compose on a cheap VPS",
       "Deploy a web app with Docker in 3 steps",
       "Kubernetes vs Docker Swarm for small teams",
-      "CI/CD pipeline on a $5 VPS",
+      "CI/CD pipeline on a budget VPS",
       "GitHub Actions + VPS auto-deploy setup",
       "VPS security hardening checklist",
       "Firewall configuration best practices",
@@ -129,42 +123,20 @@
   STYLE_MODIFIERS = [
       "Use a confident, bold tone. Short punchy sentences.",
       "Use a storytelling angle — open with a mini real-world scenario.",
-      "Use a 'myth vs reality' frame — bust a common misconception.",
-      "Use a 'most people don't know this' hook to drive curiosity.",
-      "Use a numbered list format — '5 reasons why...' or '3 things that...'",
+      "Use a myth vs reality frame — bust a common misconception.",
+      "Use a numbered list format — 5 reasons why or 3 things that.",
       "Use a conversational friendly tone, like talking to a colleague.",
       "Use urgency and scarcity signals throughout.",
       "Use a beginner-friendly angle — assume zero technical knowledge.",
       "Use a pro/expert angle — talk directly to experienced sysadmins.",
       "Use a cost-saving / ROI angle — focus on money saved or earned.",
       "Use a security-first angle — emphasize risks and how to avoid them.",
-      "Use a comparison/versus angle even if not explicitly a comparison post.",
       "Use an aspirational tone — paint a picture of what success looks like.",
       "Use a problem-first structure — lead with the pain, then the solution.",
-      "Use a controversial or contrarian opinion to spark discussion.",
-      "Use a 'quick wins' frame — what can someone do in the next 10 minutes?",
-      "Use a 'case study' frame — write as if describing a real customer success.",
-      "Use a 'behind the scenes' angle — insider knowledge others don't share.",
-      "Use a 'warning' or 'danger' framing — something people are doing wrong.",
+      "Use a quick wins frame — what can someone do in the next 10 minutes?",
+      "Use a case study frame — write as if describing a real customer success.",
+      "Use a warning framing — something people are doing wrong.",
       "Use a minimalist style — fewer words, more impact per sentence.",
-  ]
-
-  # ── AI image generation via Pollinations.ai (free, no API key, Flux model) ───
-  #
-  # Every image is generated fresh from a topic-specific prompt.
-  # The random seed guarantees zero repetition — ever.
-
-  _IMAGE_STYLE_SUFFIXES = [
-      "ultra-realistic 8K professional photography, cinematic lighting, dark tech aesthetic",
-      "futuristic digital art, blue neon glow, server room atmosphere, hyper-detailed",
-      "corporate tech illustration, clean minimal style, vibrant colors, professional",
-      "isometric 3D render, glowing circuits, dark background, ultra-sharp detail",
-      "photorealistic datacenter interior, dramatic lighting, modern infrastructure",
-      "abstract cyberpunk technology visualization, neon accents, high contrast",
-      "clean flat design tech illustration, gradient colors, modern and professional",
-      "macro photography of circuit boards, sharp focus, vivid colors, studio quality",
-      "cinematic wide-angle server room shot, blue and orange lighting, epic scale",
-      "digital art concept visualization, glowing data streams, dark theme, 4K",
   ]
 
   _TOPIC_IMAGE_PROMPTS = {
@@ -172,75 +144,70 @@
       "kubernetes": "Kubernetes orchestration diagram, pod clusters, cloud-native technology, abstract",
       "ssh": "secure shell terminal, green text on black screen, encryption visualization, cybersecurity",
       "security": "cybersecurity shield, digital lock, firewall protection, network security visualization",
-      "firewall": "network firewall visualization, packet filtering, secure gateway, digital protection",
-      "ssl": "SSL certificate, HTTPS padlock, secure connection, encryption data flow",
-      "nginx": "Nginx web server, reverse proxy load balancing, high-traffic web architecture",
-      "vpn": "VPN tunnel visualization, encrypted connection, privacy shield, global network",
-      "backup": "data backup system, cloud storage, disaster recovery, digital archive",
-      "monitoring": "server monitoring dashboard, real-time metrics, uptime graphs, alert system",
-      "linux": "Linux terminal command line, open source penguin logo, code on dark screen",
-      "ubuntu": "Ubuntu Linux desktop, server terminal, Canonical logo, open source",
-      "windows": "Windows Server interface, datacenter, Microsoft cloud infrastructure",
+      "firewall": "network firewall packet filtering, secure gateway, digital protection concept",
+      "ssl": "SSL certificate HTTPS padlock, secure connection, encryption data flow, green lock",
+      "nginx": "Nginx web server reverse proxy, load balancing, high-traffic architecture diagram",
+      "vpn": "VPN tunnel visualization, encrypted connection, privacy shield, global network map",
+      "backup": "data backup system, cloud storage disaster recovery, digital archive, safe storage",
+      "monitoring": "server monitoring dashboard, real-time metrics, uptime graphs, alert notification",
+      "linux": "Linux terminal command line, Tux penguin logo, code on dark screen, open source",
+      "ubuntu": "Ubuntu Linux server terminal, orange purple branding, open source datacenter",
+      "windows": "Windows Server interface, datacenter racks, cloud infrastructure, blue theme",
       "rdp": "Remote Desktop connection, Windows remote access, screen sharing technology",
-      "cloud": "cloud computing infrastructure, floating servers, scalable architecture, sky",
-      "vps": "Virtual Private Server, virtualization layers, isolated containers, datacenter rack",
-      "docker compose": "multi-container Docker application, service orchestration, YAML configuration",
-      "database": "database server, SQL tables visualization, data storage, PostgreSQL concept",
-      "python": "Python programming, snake logo, automation scripts, code on dark background",
-      "telegram": "Telegram bot automation, messaging API, code and chat interface",
-      "crypto": "cryptocurrency node server, blockchain network, mining rig, digital ledger",
-      "game": "game server infrastructure, low-latency network, gaming datacenter",
-      "wordpress": "WordPress website hosting, CMS dashboard, PHP server, web publishing",
+      "cloud": "cloud computing infrastructure, floating servers, scalable architecture, sky data",
+      "vps": "Virtual Private Server visualization, virtualization layers, isolated containers, rack",
+      "database": "database server SQL tables, structured data storage, PostgreSQL visualization",
+      "python": "Python programming snake logo, automation scripts, code on dark background",
+      "telegram": "Telegram bot automation, messaging API, blue chat interface, code integration",
+      "crypto": "cryptocurrency node server, blockchain network, mining rig, digital ledger nodes",
+      "game": "game server infrastructure, low-latency network, gaming datacenter, performance",
+      "wordpress": "WordPress hosting CMS dashboard, PHP server, web publishing platform",
       "network": "global network infrastructure, fiber optic cables, internet exchange point",
-      "latency": "low latency network ping, speed visualization, fiber optic data transfer",
-      "free": "free VPS server gift, promotional offer, cloud hosting giveaway concept",
+      "latency": "low latency network, speed visualization, fiber optic data transfer, fast",
+      "free": "free VPS server gift concept, promotional offer, cloud hosting open access",
       "speed": "server performance speed, NVMe SSD, ultra-fast data processing visualization",
-      "cost": "cost savings server hosting, budget optimization, money and technology",
+      "cost": "cost savings hosting, budget optimization, money and technology, ROI concept",
       "default": "premium VPS cloud server infrastructure, professional datacenter, advanced technology",
   }
 
+  _FALLBACK_STYLES = [
+      "ultra-realistic 8K professional photography, cinematic lighting, dark tech aesthetic",
+      "futuristic 3D render, glowing neon circuits, hyper-detailed, dark background, dramatic",
+      "clean corporate illustration, vibrant gradient colors, modern professional design",
+  ]
 
-  def _build_image_prompt(topic: str, seed: int) -> str:
-      """
-      Build a rich, topic-specific AI image prompt for Pollinations.ai.
-      Every combination of topic + seed + style suffix = 100% unique image.
-      """
+
+  def _get_base_prompt(topic: str) -> str:
       topic_lower = topic.lower()
-
-      # Find the best matching base prompt
-      base_prompt = _TOPIC_IMAGE_PROMPTS["default"]
       for keyword, prompt in _TOPIC_IMAGE_PROMPTS.items():
           if keyword in topic_lower:
-              base_prompt = prompt
-              break
-
-      # Pick a random style suffix (seeded for reproducibility if needed)
-      style = random.choice(_IMAGE_STYLE_SUFFIXES)
-      return f"{base_prompt}, {style}"
+              return prompt
+      return _TOPIC_IMAGE_PROMPTS["default"]
 
 
-  def _generate_ai_image_url(topic: str, seed: int) -> str:
-      """
-      Generate a unique AI image URL via Pollinations.ai (Flux model).
-
-      - No API key required
-      - Flux model = professional quality
-      - seed param = guaranteed uniqueness per post
-      - nologo=true = clean professional output
-      - safe=false = allows tech/server content without over-filtering
-      """
-      prompt = _build_image_prompt(topic, seed)
-      encoded_prompt = urllib.parse.quote(prompt)
-      url = (
-          f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+  def _build_pollinations_url(prompt: str, seed: int) -> str:
+      encoded = urllib.parse.quote(prompt)
+      return (
+          f"https://image.pollinations.ai/prompt/{encoded}"
           f"?width=1280&height=720&model=flux&seed={seed}&nologo=true&enhance=true"
       )
-      return url
 
 
-  # ── Per-channel two-part posting mode ──────────────────────────────────────
-  # "media" = next post is AI image + text caption
-  # "text"  = next post is text only
+  def _generate_image_urls(topic: str, base_seed: int) -> str:
+      """
+      Generate 3 AI image URLs with different seeds and visual styles.
+      Packed into one string separated by _URL_SEPARATOR.
+      Publisher tries them in order — first successful download wins.
+      """
+      base_prompt = _get_base_prompt(topic)
+      urls = []
+      for i, style in enumerate(_FALLBACK_STYLES):
+          seed = base_seed + (i * 7919)
+          full_prompt = f"{base_prompt}, {style}"
+          urls.append(_build_pollinations_url(full_prompt, seed))
+      return _URL_SEPARATOR.join(urls)
+
+
   _channel_post_mode: dict[str, str] = {}
 
 
@@ -253,7 +220,6 @@
       _channel_post_mode[channel_id] = "text" if current == "media" else "media"
 
 
-  # In-memory hash dedup (last 300 posts)
   _recent_hashes: deque = deque(maxlen=300)
   _last_post_time: dict[str, float] = {}
 
@@ -274,39 +240,20 @@
       return datetime.now(TEHRAN)
 
 
-  def _is_peak_hour() -> bool:
-      h = _now_tehran().hour
-      return any(start <= h < end for start, end, _ in PEAK_WINDOWS)
-
-
-  def _seconds_to_next_peak() -> int:
-      now = _now_tehran()
-      h, m = now.hour, now.minute
-      for start, end, _ in PEAK_WINDOWS:
-          if h < start:
-              return (start - h) * 3600 - m * 60
-      first_start = PEAK_WINDOWS[0][0]
-      return (24 - h + first_start) * 3600 - m * 60
-
-
   def _pick_content_type() -> str:
       types = list(CONTENT_TYPE_WEIGHTS.keys())
       weights = [CONTENT_TYPE_WEIGHTS[t] for t in types]
       return random.choices(types, weights=weights, k=1)[0]
 
 
-  # ── Redis-backed uniqueness tracking ───────────────────────────────────────
-
   async def _is_combo_used(topic: str, content_type: str) -> bool:
       from app.cache.redis_client import cache_get
-      key = _combo_key(topic, content_type)
-      return bool(await cache_get(key))
+      return bool(await cache_get(_combo_key(topic, content_type)))
 
 
   async def _mark_combo_used(topic: str, content_type: str) -> None:
       from app.cache.redis_client import cache_set
-      key = _combo_key(topic, content_type)
-      await cache_set(key, "1", ttl=7 * 24 * 3600)
+      await cache_set(_combo_key(topic, content_type), "1", ttl=7 * 24 * 3600)
 
 
   def _combo_key(topic: str, content_type: str) -> str:
@@ -318,16 +265,12 @@
       all_types = list(CONTENT_TYPE_WEIGHTS.keys())
       candidates = [(t, ct) for t in TOPICS_POOL for ct in all_types]
       random.shuffle(candidates)
-
       for topic, content_type in candidates:
           if not await _is_combo_used(topic, content_type):
               return topic, content_type
-
       logger.warning("all_post_combos_used_picking_random")
       return random.choice(TOPICS_POOL), _pick_content_type()
 
-
-  # ── DB-backed forbidden angles ──────────────────────────────────────────────
 
   async def _get_recent_post_angles(limit: int = 25) -> list[str]:
       try:
@@ -351,8 +294,6 @@
           return []
 
 
-  # ── Main channel post function ──────────────────────────────────────────────
-
   async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
       lang = channel.language or "en"
       if lang == "fa":
@@ -364,7 +305,6 @@
       topic, content_type = await _pick_fresh_combo()
       forbidden_angles = await _get_recent_post_angles(limit=25)
       style_hint = random.choice(STYLE_MODIFIERS)
-      # Unique seed drives both text uniqueness and image uniqueness
       unique_seed = random.randint(100_000, 99_999_999)
 
       for attempt in range(4):
@@ -374,14 +314,8 @@
               unique_seed = random.randint(100_000, 99_999_999)
 
           try:
-              logger.info(
-                  "auto_post_generating",
-                  channel=channel.display_name,
-                  type=content_type,
-                  topic=topic,
-                  mode=post_mode,
-                  attempt=attempt + 1,
-              )
+              logger.info("auto_post_generating", channel=channel.display_name,
+                          type=content_type, topic=topic, mode=post_mode, attempt=attempt + 1)
               content = await generate_post(
                   content_type, topic, lang,
                   include_hashtags=True,
@@ -390,30 +324,21 @@
                   unique_seed=unique_seed,
               )
           except Exception as e:
-              logger.error("auto_post_generate_failed",
-                           channel=channel.display_name, error=str(e))
+              logger.error("auto_post_generate_failed", channel=channel.display_name, error=str(e))
               return False
 
           if not _is_duplicate(content):
               break
 
-          logger.warning("auto_post_duplicate_detected",
-                         channel=channel.display_name, attempt=attempt + 1)
+          logger.warning("auto_post_duplicate_detected", channel=channel.display_name, attempt=attempt + 1)
           if attempt == 3:
-              logger.error("auto_post_all_duplicates_skipping",
-                           channel=channel.display_name)
+              logger.error("auto_post_all_duplicates_skipping", channel=channel.display_name)
               return False
 
-      # For media posts: generate a 100% unique AI image via Pollinations.ai
       image_url: str | None = None
       if post_mode == "media":
-          image_url = _generate_ai_image_url(topic, unique_seed)
-          logger.info(
-              "auto_post_ai_image_generated",
-              channel=channel.display_name,
-              topic=topic,
-              seed=unique_seed,
-          )
+          image_url = _generate_image_urls(topic, unique_seed)
+          logger.info("image_urls_generated", topic=topic, base_seed=unique_seed)
 
       async with AsyncSessionLocal() as session:
           post = Post(
@@ -434,20 +359,14 @@
               _record_hash(content)
               await _mark_combo_used(topic, content_type)
               _toggle_post_mode(channel_id_str)
-              logger.info(
-                  "auto_post_sent",
-                  channel=channel.display_name,
-                  type=content_type,
-                  topic=topic,
-                  mode=post_mode,
-                  has_media=image_url is not None,
-              )
+              logger.info("auto_post_sent", channel=channel.display_name,
+                          type=content_type, topic=topic, mode=post_mode,
+                          has_media=image_url is not None)
               return True
           except Exception as e:
               post.status = "failed"
               await session.commit()
-              logger.error("auto_post_send_failed",
-                           channel=channel.display_name, error=str(e))
+              logger.error("auto_post_send_failed", channel=channel.display_name, error=str(e))
               return False
 
 
@@ -487,8 +406,7 @@
                   if now_ts - last < MIN_INTERVAL_SECONDS:
                       remaining = int((MIN_INTERVAL_SECONDS - (now_ts - last)) / 60)
                       logger.info("auto_poster_channel_cooldown",
-                                  channel=channel.display_name,
-                                  remaining_minutes=remaining)
+                                  channel=channel.display_name, remaining_minutes=remaining)
                       continue
 
                   success = await _post_to_channel(userbot_manager, channel)
