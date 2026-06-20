@@ -1,317 +1,283 @@
 import io
-  import random
-  import hashlib
-  import asyncio
-  import uuid
-  from datetime import datetime, timezone
-  import httpx
-  from sqlalchemy.ext.asyncio import AsyncSession
-  from sqlalchemy import select
-  from app.models.channel import TelegramChannel
-  from app.models.post import Post
-  from app.services.monitoring.metrics_collector import increment_daily_stat
-  from app.core.logging import get_logger
+import random
+import hashlib
+import asyncio
+import uuid
+from datetime import datetime, timezone
+import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.models.channel import TelegramChannel
+from app.models.post import Post
+from app.services.monitoring.metrics_collector import increment_daily_stat
+from app.core.logging import get_logger
 
-  logger = get_logger(__name__)
+logger = get_logger(__name__)
 
-  _userbot_manager = None
+_userbot_manager = None
 
-  MAX_CAPTION_LENGTH = 1020
-  MAX_TEXT_LENGTH    = 4090
+MAX_CAPTION_LENGTH = 1020
+MAX_TEXT_LENGTH    = 4090
 
-  # Separator used to pack multiple fallback image URLs into one field
-  _URL_SEPARATOR = "|||"
+_URL_SEPARATOR = "|||"
 
-  _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 
-  # ── Admin signatures ─────────────────────────────────────────────────────────
-  ADMIN_SIGNATURES = [
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎖️  Channel Admin  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n👑  Official Admin  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚜️  Verified Admin  ·  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔱  Director & Admin  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💠  Channel Manager  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛡️  Head of Operations  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏆  Authorized Admin  ·  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n📡  Admin & Publisher  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔐  Certified Admin  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚙️  System Admin  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌐  Network Admin  ·  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🚀  Channel Lead  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💎  Senior Admin  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎯  Operations Lead  ·  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔮  Channel Director  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚡  Chief Admin  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌟  Verified Publisher  ·  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏅  Admin Authority  ›  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛰️  Broadcast Admin  |  @VPS24H",
-      "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🦅  Executive Admin  ·  @VPS24H",
-  ]
+# ── Admin signatures ─────────────────────────────────────────────────────
+ADMIN_SIGNATURES = [
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🇦️  Channel Admin  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n👑  Official Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚜️  Verified Admin  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔱  Director & Admin  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💠  Channel Manager  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛡️  Head of Operations  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏆  Authorized Admin  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n📡  Admin & Publisher  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔐  Certified Admin  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚙️  System Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌐  Network Admin  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🚀  Channel Lead  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💎  Senior Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎯  Operations Lead  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔮  Channel Director  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚡  Chief Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌟  Verified Publisher  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏅  Admin Authority  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛰️  Broadcast Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🦥  Executive Admin  ·  @VPS24H",
+]
 
-  # ── Channel tag formats ───────────────────────────────────────────────────────
-  # Appended AFTER hashtags, BEFORE admin signature
-  CHANNEL_TAG_FORMATS = [
-      "\n\n📢  @{username}  —  Join Our Channel",
-      "\n\n📡  @{username}  |  Official Channel",
-      "\n\n🔔  @{username}  ·  Subscribe Now",
-      "\n\n💬  @{username}  —  Our Channel",
-      "\n\n🌐  @{username}  |  Follow Us",
-      "\n\n⭐  @{username}  ·  Stay Updated",
-      "\n\n🚀  @{username}  —  Channel Link",
-      "\n\n📣  @{username}  |  Official Feed",
-      "\n\n🔗  @{username}  ·  Tap to Follow",
-      "\n\n💡  @{username}  —  Main Channel",
-  ]
+CHANNEL_TAG_FORMATS = [
+    "\n\n📢  @{username}  —  Join Our Channel",
+    "\n\n📡  @{username}  |  Official Channel",
+    "\n\n🔔  @{username}  ·  Subscribe Now",
+    "\n\n💬  @{username}  —  Our Channel",
+    "\n\n🌐  @{username}  |  Follow Us",
+    "\n\n⭐  @{username}  ·  Stay Updated",
+    "\n\n🚀  @{username}  —  Channel Link",
+    "\n\n📣  @{username}  |  Official Feed",
+    "\n\n🔗  @{username}  ·  Tap to Follow",
+    "\n\n💡  @{username}  —  Main Channel",
+]
 
 
-  def _get_admin_signature() -> str:
-      """Return a randomly chosen admin signature."""
-      return random.choice(ADMIN_SIGNATURES)
+def _get_admin_signature() -> str:
+    return random.choice(ADMIN_SIGNATURES)
 
 
-  def _get_channel_tag(username: str) -> str:
-      """Return a randomly chosen channel tag line."""
-      fmt = random.choice(CHANNEL_TAG_FORMATS)
-      return fmt.format(username=username)
+def _get_channel_tag(username: str) -> str:
+    fmt = random.choice(CHANNEL_TAG_FORMATS)
+    return fmt.format(username=username)
 
 
-  def set_userbot_manager(manager) -> None:
-      global _userbot_manager
-      _userbot_manager = manager
+def set_userbot_manager(manager) -> None:
+    global _userbot_manager
+    _userbot_manager = manager
 
 
-  def _is_video_url(url: str) -> bool:
-      lower = url.lower().split("?")[0]
-      return any(lower.endswith(ext) for ext in _VIDEO_EXTENSIONS)
+def _is_video_url(url: str) -> bool:
+    lower = url.lower().split("?")[0]
+    return any(lower.endswith(ext) for ext in _VIDEO_EXTENSIONS)
 
 
-  def _parse_image_urls(image_url: str) -> list[str]:
-      """Split a packed multi-URL field into a list of individual URLs."""
-      if not image_url:
-          return []
-      return [u.strip() for u in image_url.split(_URL_SEPARATOR) if u.strip()]
+def _parse_image_urls(image_url: str) -> list[str]:
+    if not image_url:
+        return []
+    return [u.strip() for u in image_url.split(_URL_SEPARATOR) if u.strip()]
 
 
-  def _truncate_body(text: str, limit: int) -> str:
-      """Truncate only the main body text, preserving clean line breaks."""
-      if len(text) <= limit:
-          return text
-      truncated = text[:limit - 3]
-      last_newline = truncated.rfind("\n")
-      if last_newline > limit // 2:
-          truncated = truncated[:last_newline]
-      return truncated + "…"
+def _truncate_body(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    truncated = text[:limit - 3]
+    last_newline = truncated.rfind("\n")
+    if last_newline > limit // 2:
+        truncated = truncated[:last_newline]
+    return truncated + "…"
 
 
-  def _split_body_and_hashtags(content: str) -> tuple[str, str]:
-      """
-      Split the content into the main body and the trailing hashtag block.
-      generator.py appends hashtags as the last paragraph separated by \n\n.
-      Returns (body, hashtag_block) where hashtag_block includes the leading \n\n.
-      """
-      parts = content.rsplit("\n\n", 1)
-      if len(parts) == 2 and parts[1].strip().startswith("#"):
-          return parts[0], "\n\n" + parts[1].strip()
-      return content, ""
+def _split_body_and_hashtags(content: str) -> tuple[str, str]:
+    parts = content.rsplit("\n\n", 1)
+    if len(parts) == 2 and parts[1].strip().startswith("#"):
+        return parts[0], "\n\n" + parts[1].strip()
+    return content, ""
 
 
-  def _build_post_text(
-      content: str,
-      channel_username: str | None,
-      max_length: int,
-  ) -> str:
-      """
-      Build the final post text with this order:
-          1. Main body (truncated to fit)
-          2. Hashtags (SEO)
-          3. Channel tag
-          4. Admin signature
-
-      Truncation applies ONLY to the main body — hashtags, channel tag,
-      and admin signature are ALWAYS included in full.
-      """
-      body, hashtags = _split_body_and_hashtags(content)
-
-      channel_tag = _get_channel_tag(channel_username) if channel_username else ""
-      admin_sig   = _get_admin_signature()
-
-      footer = hashtags + channel_tag + admin_sig
-      available = max(max_length - len(footer), 100)
-      truncated_body = _truncate_body(body, available)
-
-      return truncated_body + footer
+def _build_post_text(
+    content: str,
+    channel_username: str | None,
+    max_length: int,
+) -> str:
+    body, hashtags = _split_body_and_hashtags(content)
+    channel_tag = _get_channel_tag(channel_username) if channel_username else ""
+    admin_sig = _get_admin_signature()
+    footer = hashtags + channel_tag + admin_sig
+    available = max(max_length - len(footer), 100)
+    truncated_body = _truncate_body(body, available)
+    return truncated_body + footer
 
 
-  async def _refresh_channel_info(client, channel: TelegramChannel) -> None:
-      try:
-          entity = await client.get_entity(channel.telegram_channel_id)
-          changed = False
-          username = getattr(entity, "username", None)
-          if username and channel.username != username:
-              channel.username = username
-              changed = True
-          title = getattr(entity, "title", None)
-          if title and channel.display_name != title:
-              channel.display_name = title
-              changed = True
-          if changed:
-              logger.info("channel_info_refreshed", channel_id=str(channel.id),
-                          username=channel.username, display_name=channel.display_name)
-      except Exception as e:
-          logger.warning("channel_info_refresh_failed", channel_id=str(channel.id), error=str(e))
+async def _refresh_channel_info(client, channel: TelegramChannel) -> None:
+    try:
+        entity = await client.get_entity(channel.telegram_channel_id)
+        changed = False
+        username = getattr(entity, "username", None)
+        if username and channel.username != username:
+            channel.username = username
+            changed = True
+        title = getattr(entity, "title", None)
+        if title and channel.display_name != title:
+            channel.display_name = title
+            changed = True
+        if changed:
+            logger.info("channel_info_refreshed", channel_id=str(channel.id),
+                        username=channel.username, display_name=channel.display_name)
+    except Exception as e:
+        logger.warning("channel_info_refresh_failed", channel_id=str(channel.id), error=str(e))
 
 
-  async def _download_media_bytes(url: str, attempt: int = 1, timeout: int = 90) -> bytes | None:
-      """
-      Download image/video bytes from a URL.
-      Generous timeout because AI image generation (Pollinations.ai) can take 15-60s.
-      Returns None on failure so the caller can try the next fallback URL.
-      """
-      try:
-          async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-              logger.info("media_download_start", url=url[:80], attempt=attempt)
-              response = await client.get(url)
-              response.raise_for_status()
-              data = response.content
-              if len(data) < 1024:
-                  logger.warning("media_download_too_small", size=len(data), attempt=attempt)
-                  return None
-              logger.info("media_download_done", size_kb=len(data) // 1024,
-                          content_type=response.headers.get("content-type", ""), attempt=attempt)
-              return data
-      except Exception as e:
-          logger.warning("media_download_failed", url=url[:80], error=str(e), attempt=attempt)
-          return None
+async def _download_media_bytes(url: str, attempt: int = 1, timeout: int = 90) -> bytes | None:
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            logger.info("media_download_start", url=url[:80], attempt=attempt)
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.content
+            if len(data) < 1024:
+                logger.warning("media_download_too_small", size=len(data), attempt=attempt)
+                return None
+            logger.info("media_download_done", size_kb=len(data) // 1024,
+                        content_type=response.headers.get("content-type", ""), attempt=attempt)
+            return data
+    except Exception as e:
+        logger.warning("media_download_failed", url=url[:80], error=str(e), attempt=attempt)
+        return None
 
 
-  async def _download_with_fallbacks(urls: list[str]) -> bytes | None:
-      """Try each URL in order until one succeeds. Returns bytes or None if all fail."""
-      for i, url in enumerate(urls, start=1):
-          data = await _download_media_bytes(url, attempt=i)
-          if data:
-              logger.info("media_download_success_on_attempt", attempt=i, total=len(urls))
-              return data
-          if i < len(urls):
-              logger.info("media_download_trying_next_fallback", next_attempt=i + 1)
-              await asyncio.sleep(2)
-      logger.warning("all_media_fallbacks_failed", total_urls=len(urls))
-      return None
+async def _download_with_fallbacks(urls: list[str]) -> bytes | None:
+    for i, url in enumerate(urls, start=1):
+        data = await _download_media_bytes(url, attempt=i)
+        if data:
+            logger.info("media_download_success_on_attempt", attempt=i, total=len(urls))
+            return data
+        if i < len(urls):
+            logger.info("media_download_trying_next_fallback", next_attempt=i + 1)
+            await asyncio.sleep(2)
+    logger.warning("all_media_fallbacks_failed", total_urls=len(urls))
+    return None
 
 
-  async def publish_post(session: AsyncSession, post: Post) -> dict:
-      if not _userbot_manager:
-          logger.error("publisher_no_userbot_manager")
-          return {}
+async def publish_post(session: AsyncSession, post: Post) -> dict:
+    if not _userbot_manager:
+        logger.error("publisher_no_userbot_manager")
+        return {}
 
-      from app.cache.redis_client import cache_get
-      posting_paused = await cache_get("system:posting_paused")
-      if posting_paused:
-          logger.info("publishing_paused_skipping")
-          return {}
+    from app.cache.redis_client import cache_get
+    posting_paused = await cache_get("system:posting_paused")
+    if posting_paused:
+        logger.info("publishing_paused_skipping")
+        return {}
 
-      results = {}
-      channel_ids = post.channel_ids or []
+    results = {}
+    channel_ids = post.channel_ids or []
 
-      for channel_id_str in channel_ids:
-          channel_id = uuid.UUID(channel_id_str) if isinstance(channel_id_str, str) else channel_id_str
-          result = await session.execute(
-              select(TelegramChannel).where(TelegramChannel.id == channel_id)
-          )
-          channel = result.scalar_one_or_none()
+    for channel_id_str in channel_ids:
+        channel_id = uuid.UUID(channel_id_str) if isinstance(channel_id_str, str) else channel_id_str
+        result = await session.execute(
+            select(TelegramChannel).where(TelegramChannel.id == channel_id)
+        )
+        channel = result.scalar_one_or_none()
 
-          if not channel or not channel.is_active:
-              results[str(channel_id)] = {"status": "skipped", "reason": "channel_not_found_or_inactive"}
-              continue
+        if not channel or not channel.is_active:
+            results[str(channel_id)] = {"status": "skipped", "reason": "channel_not_found_or_inactive"}
+            continue
 
-          content = post.languages.get(channel.language) or post.content
-          if not content:
-              results[str(channel_id)] = {"status": "skipped", "reason": "no_content_for_language"}
-              continue
+        content = post.languages.get(channel.language) or post.content
+        if not content:
+            results[str(channel_id)] = {"status": "skipped", "reason": "no_content_for_language"}
+            continue
 
-          try:
-              client = _userbot_manager.get_client(str(post.account_id))
-              if not (client and client.is_connected):
-                  results[str(channel_id)] = {"status": "error", "reason": "no_connected_client"}
-                  continue
+        try:
+            client = _userbot_manager.get_client(str(post.account_id))
+            if not (client and client.is_connected):
+                results[str(channel_id)] = {"status": "error", "reason": "no_connected_client"}
+                continue
 
-              if not channel.username or not channel.display_name:
-                  await _refresh_channel_info(client, channel)
+            if not channel.username or not channel.display_name:
+                await _refresh_channel_info(client, channel)
 
-              media_sent = False
+            media_sent = False
 
-              if post.image_url:
-                  image_urls = _parse_image_urls(post.image_url)
-                  media_bytes = await _download_with_fallbacks(image_urls)
+            if post.image_url:
+                image_urls = _parse_image_urls(post.image_url)
+                media_bytes = await _download_with_fallbacks(image_urls)
 
-                  if media_bytes:
-                      # Build caption: body + hashtags + channel_tag + admin_sig
-                      caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
-                      is_video = _is_video_url(image_urls[0])
-                      file_obj = io.BytesIO(media_bytes)
+                if media_bytes:
+                    caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
+                    is_video = _is_video_url(image_urls[0])
+                    file_obj = io.BytesIO(media_bytes)
 
-                      if is_video:
-                          file_obj.name = "video.mp4"
-                          msg = await client.send_file(
-                              channel.telegram_channel_id,
-                              file_obj,
-                              caption=caption,
-                              parse_mode="md",
-                              supports_streaming=True,
-                          )
-                          media_type = "video"
-                      else:
-                          file_obj.name = "image.jpg"
-                          msg = await client.send_file(
-                              channel.telegram_channel_id,
-                              file_obj,
-                              caption=caption,
-                              parse_mode="md",
-                          )
-                          media_type = "image"
+                    if is_video:
+                        file_obj.name = "video.mp4"
+                        msg = await client.send_file(
+                            channel.telegram_channel_id,
+                            file_obj,
+                            caption=caption,
+                            parse_mode="md",
+                            supports_streaming=True,
+                        )
+                        media_type = "video"
+                    else:
+                        file_obj.name = "image.jpg"
+                        msg = await client.send_file(
+                            channel.telegram_channel_id,
+                            file_obj,
+                            caption=caption,
+                            parse_mode="md",
+                        )
+                        media_type = "image"
 
-                      results[str(channel_id)] = {
-                          "status": "published",
-                          "message_id": msg.id,
-                          "has_media": True,
-                          "media_type": media_type,
-                      }
-                      media_sent = True
-                      logger.info("post_published_with_media", channel_id=str(channel_id),
-                                  msg_id=msg.id, media_type=media_type, size_kb=len(media_bytes) // 1024)
-                  else:
-                      logger.warning("all_media_downloads_failed_falling_back_to_text",
-                                     channel_id=str(channel_id))
+                    results[str(channel_id)] = {
+                        "status": "published",
+                        "message_id": msg.id,
+                        "has_media": True,
+                        "media_type": media_type,
+                    }
+                    media_sent = True
+                    logger.info("post_published_with_media", channel_id=str(channel_id),
+                                msg_id=msg.id, media_type=media_type, size_kb=len(media_bytes) // 1024)
+                else:
+                    logger.warning("all_media_downloads_failed_falling_back_to_text",
+                                   channel_id=str(channel_id))
 
-              if not media_sent:
-                  # Build text: body + hashtags + channel_tag + admin_sig
-                  text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
-                  msg = await client.send_message(
-                      channel.telegram_channel_id,
-                      text,
-                      parse_mode="md",
-                  )
-                  results[str(channel_id)] = {
-                      "status": "published",
-                      "message_id": msg.id,
-                      "has_media": False,
-                      "media_type": None,
-                  }
-                  logger.info("post_published_text_only", channel_id=str(channel_id), msg_id=msg.id)
+            if not media_sent:
+                text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
+                msg = await client.send_message(
+                    channel.telegram_channel_id,
+                    text,
+                    parse_mode="md",
+                )
+                results[str(channel_id)] = {
+                    "status": "published",
+                    "message_id": msg.id,
+                    "has_media": False,
+                    "media_type": None,
+                }
+                logger.info("post_published_text_only", channel_id=str(channel_id), msg_id=msg.id)
 
-              channel.post_count = (channel.post_count or 0) + 1
-              await increment_daily_stat("posts_published")
-              await asyncio.sleep(1)
+            channel.post_count = (channel.post_count or 0) + 1
+            await increment_daily_stat("posts_published")
+            await asyncio.sleep(1)
 
-          except Exception as e:
-              logger.error("publish_failed", channel_id=str(channel_id), error=str(e))
-              results[str(channel_id)] = {"status": "error", "reason": str(e)[:200]}
+        except Exception as e:
+            logger.error("publish_failed", channel_id=str(channel_id), error=str(e))
+            results[str(channel_id)] = {"status": "error", "reason": str(e)[:200]}
 
-      published_count = sum(1 for r in results.values() if r.get("status") == "published")
-      post.publish_log = results
-      post.status = "published" if published_count > 0 else "failed"
-      post.published_at = datetime.now(timezone.utc)
+    published_count = sum(1 for r in results.values() if r.get("status") == "published")
+    post.publish_log = results
+    post.status = "published" if published_count > 0 else "failed"
+    post.published_at = datetime.now(timezone.utc)
 
-      logger.info("post_publish_complete", post_id=str(post.id),
-                  published=published_count, total=len(channel_ids))
-      return results
-  
+    logger.info("post_publish_complete", post_id=str(post.id),
+                published=published_count, total=len(channel_ids))
+    return results
