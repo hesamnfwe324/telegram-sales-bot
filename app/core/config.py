@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "TelegramAgent"
     APP_ENV: str = "production"
     DEBUG: bool = False
-    SECRET_KEY: str
-    API_KEY: str
+    SECRET_KEY: str = "change-me-in-production"
+    API_KEY: str = "change-me-api-key"
 
-    DATABASE_URL: str
+    DATABASE_URL: str = "postgresql+asyncpg://localhost/dev"
     DATABASE_SSL: bool = False
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 5
