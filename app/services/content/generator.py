@@ -80,36 +80,6 @@ TOPIC_HASHTAG_MAP = {
     "python": ["#Python", "#PythonServer", "#AutomationBot", "#ScriptServer"],
 }
 
-# ── Admin signatures — rotated randomly on every post ──────────────────────
-# All posts MUST be in English only.
-# Each format uses a different professional/organizational emoji + wording.
-ADMIN_SIGNATURES = [
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎖️  Channel Admin  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n👑  Official Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚜️  Verified Admin  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔱  Director & Admin  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💠  Channel Manager  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛡️  Head of Operations  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏆  Authorized Admin  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n📡  Admin & Publisher  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔐  Certified Admin  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚙️  System Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌐  Network Admin  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🚀  Channel Lead  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💎  Senior Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎯  Operations Lead  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔮  Channel Director  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚡  Chief Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌟  Verified Publisher  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏅  Admin Authority  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛰️  Broadcast Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🦅  Executive Admin  ·  @VPS24H",
-]
-
-
-def _get_admin_signature() -> str:
-    """Return a randomly chosen admin signature for @VPS24H."""
-    return random.choice(ADMIN_SIGNATURES)
 
 
 async def generate_post(
@@ -137,8 +107,6 @@ async def generate_post(
                     if tags:
                             content = f"{content}\n\n{' '.join(tags)}"
 
-            # Append rotating admin signature — always present in every post.
-            content = content + _get_admin_signature()
 
             logger.info("post_generated", content_type=content_type,
                                     language=language, topic=topic)
@@ -218,3 +186,4 @@ def get_supported_languages() -> list[str]:
 
 def get_content_types() -> list[str]:
     return get_all_content_types()
+
