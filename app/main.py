@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,35 +17,76 @@ logger = get_logger(__name__)
 
 _userbot_task: asyncio.Task | None = None
 _auto_poster_task: asyncio.Task | None = None
+_startup_errors: list[str] = []
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _userbot_task, _auto_poster_task
+    global _userbot_task, _auto_poster_task, _startup_errors
+    _startup_errors = []
 
     logger.info("application_starting", env=settings.APP_ENV)
 
-    await get_redis()
-    logger.info("redis_connected")
+    try:
+        await get_redis()
+        logger.info("redis_connected")
+    except Exception as e:
+        msg = f"redis: {e}"
+        _startup_errors.append(msg)
+        print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+        logger.error("redis_startup_failed", error=str(e))
 
-    await init_db()
-    logger.info("database_initialized")
+    try:
+        await init_db()
+        logger.info("database_initialized")
+    except Exception as e:
+        msg = f"init_db: {e}"
+        _startup_errors.append(msg)
+        print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+        logger.error("database_startup_failed", error=str(e))
 
-    await userbot_manager.start()
-    _userbot_task = asyncio.create_task(userbot_manager.run_until_disconnected())
-    logger.info("userbot_manager_started")
+    try:
+        await userbot_manager.start()
+        _userbot_task = asyncio.create_task(userbot_manager.run_until_disconnected())
+        logger.info("userbot_manager_started")
+    except Exception as e:
+        msg = f"userbot: {e}"
+        _startup_errors.append(msg)
+        print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+        logger.error("userbot_startup_failed", error=str(e))
 
-    from app.services.channel.publisher import set_userbot_manager as set_publisher_manager
-    set_publisher_manager(userbot_manager)
+    try:
+        from app.services.channel.publisher import set_userbot_manager as set_publisher_manager
+        set_publisher_manager(userbot_manager)
+    except Exception as e:
+        msg = f"publisher: {e}"
+        _startup_errors.append(msg)
+        logger.error("publisher_startup_failed", error=str(e))
 
-    from app.services.admin_bot.bot import setup_admin_bot
-    await setup_admin_bot(userbot_manager)
+    try:
+        from app.services.admin_bot.bot import setup_admin_bot
+        await setup_admin_bot(userbot_manager)
+    except Exception as e:
+        msg = f"admin_bot: {e}"
+        _startup_errors.append(msg)
+        print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+        logger.error("admin_bot_startup_failed", error=str(e))
 
-    from app.services.channel.auto_poster import run_auto_poster
-    _auto_poster_task = asyncio.create_task(run_auto_poster(userbot_manager))
-    logger.info("auto_poster_started")
+    try:
+        from app.services.channel.auto_poster import run_auto_poster
+        _auto_poster_task = asyncio.create_task(run_auto_poster(userbot_manager))
+        logger.info("auto_poster_started")
+    except Exception as e:
+        msg = f"auto_poster: {e}"
+        _startup_errors.append(msg)
+        logger.error("auto_poster_startup_failed", error=str(e))
 
-    logger.info("application_ready")
+    if _startup_errors:
+        logger.error("application_started_with_errors", errors=_startup_errors)
+        print(f"STARTUP_ERRORS: {_startup_errors}", file=sys.stderr, flush=True)
+    else:
+        logger.info("application_ready")
+
     yield
 
     logger.info("application_shutting_down")
@@ -60,12 +102,18 @@ async def lifespan(app: FastAPI):
             await _userbot_task
         except asyncio.CancelledError:
             pass
-    await userbot_manager.stop()
+    try:
+        await userbot_manager.stop()
+    except Exception:
+        pass
 
-    from app.services.admin_bot.bot import shutdown_admin_bot
-    await shutdown_admin_bot()
+    try:
+        from app.services.admin_bot.bot import shutdown_admin_bot
+        await shutdown_admin_bot()
+    except Exception:
+        pass
 
-    await close_redis()  # Redis closed AFTER admin bot — bot may send shutdown alerts
+    await close_redis()
     logger.info("application_stopped")
 
 
@@ -130,14 +178,27 @@ async def healthz():
     return {"status": "ok", "app": settings.APP_NAME}
 
 
+@app.get("/api/startup-status")
+async def startup_status():
+    return {
+        "status": "degraded" if _startup_errors else "ok",
+        "errors": _startup_errors,
+        "env": {
+            "APP_ENV": settings.APP_ENV,
+            "DATABASE_SSL": settings.DATABASE_SSL,
+            "HAS_DATABASE_URL": bool(settings.DATABASE_URL),
+            "HAS_GROQ_KEY": bool(settings.GROQ_API_KEY),
+            "HAS_ADMIN_TOKEN": bool(settings.ADMIN_BOT_TOKEN),
+            "REDIS_URL": settings.REDIS_URL,
+        },
+    }
+
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def health_root():
-    """Root / health check — GET and HEAD for Render and UptimeRobot."""
     return {"status": "ok", "app": settings.APP_NAME}
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
-    """Health endpoint — GET and HEAD for Render and UptimeRobot."""
     return {"status": "ok", "app": settings.APP_NAME}
