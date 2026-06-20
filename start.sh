@@ -1,5 +1,5 @@
 #!/bin/bash
-  # No set -e — we handle errors explicitly so alembic hangs don't kill the script
+  # No set -e — we handle errors explicitly
 
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   cd "$SCRIPT_DIR"
@@ -21,9 +21,9 @@
 
   mkdir -p sessions data/training logs
 
-  echo "[start] Running DB migrations (timeout 45s)..."
-  # Use timeout so a hung DB connection doesn't block startup forever
-  timeout 45 env -u PYTHONPATH alembic upgrade head 2>&1 || echo "[warn] Migration skipped or timed out — continuing anyway"
+  echo "[start] Running DB migrations (timeout 20s)..."
+  # Short timeout: if DB isn't ready, uvicorn background-init will retry gracefully
+  timeout 20 env -u PYTHONPATH alembic upgrade head 2>&1 || echo "[warn] Migration skipped or timed out — app will retry on next deploy"
 
   echo "[start] Starting server on port ${PORT:-10000}..."
   exec python3 -m uvicorn app.main:app \
