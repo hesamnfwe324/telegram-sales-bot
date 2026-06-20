@@ -16,9 +16,12 @@ _bot: Bot = None
 _dp: Dispatcher = None
 
 
-def get_bot() -> Bot:
+def get_bot() -> Bot | None:
     global _bot
     if _bot is None:
+        if not settings.ADMIN_BOT_TOKEN:
+            logger.warning("admin_bot_token_not_set_skipping_bot_init")
+            return None
         _bot = Bot(
             token=settings.ADMIN_BOT_TOKEN,
             default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
@@ -76,6 +79,9 @@ async def _ensure_webhook(bot: Bot, webhook_url: str, delay: float = 20.0) -> No
 
 async def setup_admin_bot(userbot_manager=None) -> None:
     bot = get_bot()
+    if bot is None:
+        logger.warning("admin_bot_disabled_no_token")
+        return
     dp = get_dispatcher()
 
     if userbot_manager:
@@ -129,6 +135,8 @@ async def _run_polling(bot: Bot, dp: Dispatcher) -> None:
 
 async def process_update(update_data: dict) -> None:
     bot = get_bot()
+    if bot is None:
+        return
     dp = get_dispatcher()
     update = Update.model_validate(update_data)
     await dp.feed_update(bot, update)
@@ -141,6 +149,8 @@ async def shutdown_admin_bot() -> None:
     already called set_webhook before this instance shuts down.
     """
     bot = get_bot()
+    if bot is None:
+        return
     try:
         await bot.session.close()
         logger.info("admin_bot_shutdown")
