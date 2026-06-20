@@ -45,8 +45,12 @@ async def generate(_: APIKeyDep, body: GenerateRequest):
         raise HTTPException(status_code=400, detail=f"Unsupported content_type. Use: {SUPPORTED_TYPES}")
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Use: {SUPPORTED_LANGUAGES}")
-    content = await generate_post(body.content_type, body.topic, body.language)
-    return {"content": content, "language": body.language, "content_type": body.content_type}
+    try:
+          content = await generate_post(body.content_type, body.topic, body.language)
+          return {"content": content, "language": body.language, "content_type": body.content_type}
+      except Exception as _debug_exc:
+          import traceback as _tb
+          return {"debug_error": str(_debug_exc), "traceback": _tb.format_exc()[-2000:]}
 
 
 @router.post("/generate-multilingual")
