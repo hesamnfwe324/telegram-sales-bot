@@ -45,6 +45,54 @@ async def generate(_: APIKeyDep, body: GenerateRequest):
         raise HTTPException(status_code=400, detail=f"Unsupported content_type. Use: {SUPPORTED_TYPES}")
     if body.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language. Use: {SUPPORTED_LANGUAGES}")
+    content = await generate_post(body.content_type, body.topic, body.language)
+    return {"content": content, "language": body.language, "content_type": body.content_type}
+from app.api.deps import DBSession, APIKeyDep
+from app.services.content.generator import generate_post, generate_multilingual_post
+from app.models.post import Post
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+import uuid
+
+router = APIRouter(prefix="/content", tags=["content"])
+
+SUPPORTED_TYPES = [
+    "educational", "marketing", "technical", "announcement",
+    "viral_giveaway", "viral_free_resource", "viral_tip_secret",
+    "viral_poll_engagement", "viral_news_hook",
+]
+SUPPORTED_LANGUAGES = ["en", "fa", "ar", "tr", "ru", "de", "fr", "es"]
+
+
+class GenerateRequest(BaseModel):
+    topic: str
+    content_type: str = "educational"
+    language: str = "en"
+
+
+class GenerateMultilingualRequest(BaseModel):
+    topic: str
+    content_type: str = "educational"
+    languages: list[str] = ["en"]
+
+
+class CreatePostRequest(BaseModel):
+    account_id: uuid.UUID
+    content: str
+    content_type: str = "announcement"
+    languages: dict = {}
+    channel_ids: list[str] = []
+    image_url: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+
+
+@router.post("/generate")
+async def generate(_: APIKeyDep, body: GenerateRequest):
+    if body.content_type not in SUPPORTED_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported content_type. Use: {SUPPORTED_TYPES}")
+    if body.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"Unsupported language. Use: {SUPPORTED_LANGUAGES}")
     try:
           content = await generate_post(body.content_type, body.topic, body.language)
           return {"content": content, "language": body.language, "content_type": body.content_type}
