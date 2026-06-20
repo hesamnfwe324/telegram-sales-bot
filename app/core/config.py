@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     TELEGRAM_API_ID: int = 2040
     TELEGRAM_API_HASH: str = "b18441a1ff607e10a989891a5462e627"
 
-    ADMIN_BOT_TOKEN: str
+    ADMIN_BOT_TOKEN: str = ""
     ADMIN_TELEGRAM_IDS: str = ""
 
     OPENAI_API_KEY: str = ""
