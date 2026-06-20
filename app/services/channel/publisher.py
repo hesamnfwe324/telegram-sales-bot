@@ -1,4 +1,9 @@
 import io
+import random
+import hashlib
+import asyncio
+import uuid
+from datetime import datetime, timezone
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -6,29 +11,49 @@ from app.models.channel import TelegramChannel
 from app.models.post import Post
 from app.services.monitoring.metrics_collector import increment_daily_stat
 from app.core.logging import get_logger
-from datetime import datetime, timezone
-import asyncio
-import uuid
-import hashlib
 
 logger = get_logger(__name__)
 
 _userbot_manager = None
 
 MAX_CAPTION_LENGTH = 1020
-MAX_TEXT_LENGTH = 4090
-
-_CHANNEL_EMOJIS = [
-    "🌐", "🚀", "💡", "⚡", "🔥", "🛡️", "💎", "🎯",
-    "🔮", "🌟", "💫", "🏆", "⚙️", "🖥️", "🔐", "📡",
-    "🧠", "🌊", "🎪", "🦅", "🦁", "🐉", "🌙", "☄️",
-    "🏔️", "🔱", "⚜️", "🌈", "🎖️", "🛰️",
-]
-
-_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
+MAX_TEXT_LENGTH    = 4090
 
 # Separator used to pack multiple fallback image URLs into one field
 _URL_SEPARATOR = "|||"
+
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
+
+# ── Admin signatures ─────────────────────────────────────────────────────────
+# Rotated randomly on every post — always appended AFTER content truncation
+# so they are NEVER cut off.
+ADMIN_SIGNATURES = [
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎖️  Channel Admin  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n👑  Official Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚜️  Verified Admin  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔱  Director & Admin  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💠  Channel Manager  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛡️  Head of Operations  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏆  Authorized Admin  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n📡  Admin & Publisher  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔐  Certified Admin  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚙️  System Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌐  Network Admin  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🚀  Channel Lead  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n💎  Senior Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🎯  Operations Lead  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🔮  Channel Director  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n⚡  Chief Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🌟  Verified Publisher  ·  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🏅  Admin Authority  ›  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🛰️  Broadcast Admin  |  @VPS24H",
+    "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n🦅  Executive Admin  ·  @VPS24H",
+]
+
+
+def _get_admin_signature() -> str:
+    """Return a randomly chosen, beautifully-formatted admin signature."""
+    return random.choice(ADMIN_SIGNATURES)
 
 
 def set_userbot_manager(manager) -> None:
@@ -56,21 +81,6 @@ def _truncate_caption(text: str, limit: int = MAX_CAPTION_LENGTH) -> str:
     if last_newline > limit // 2:
         truncated = truncated[:last_newline]
     return truncated + "…"
-
-
-def _assign_channel_emoji(channel_id: str) -> str:
-    hash_int = int(hashlib.md5(str(channel_id).encode()).hexdigest(), 16)
-    return _CHANNEL_EMOJIS[hash_int % len(_CHANNEL_EMOJIS)]
-
-
-def _build_channel_signature(channel: TelegramChannel) -> str:
-    emoji = _assign_channel_emoji(str(channel.id))
-    if channel.username:
-        handle = f"@{channel.username.lstrip('@')}"
-    else:
-        handle = f"ID: `{channel.telegram_channel_id}`"
-    name_part = f" | {channel.display_name}" if channel.display_name else ""
-    return f"\n\n━━━━━━━━━━━━━━━━━━━━━\n{emoji} {handle}{name_part}"
 
 
 async def _refresh_channel_info(client, channel: TelegramChannel) -> None:
@@ -105,7 +115,6 @@ async def _download_media_bytes(url: str, attempt: int = 1, timeout: int = 90) -
             response.raise_for_status()
             data = response.content
             if len(data) < 1024:
-                # Too small — likely an error page, not a real image
                 logger.warning("media_download_too_small", size=len(data), attempt=attempt)
                 return None
             logger.info("media_download_done", size_kb=len(data) // 1024,
@@ -117,9 +126,7 @@ async def _download_media_bytes(url: str, attempt: int = 1, timeout: int = 90) -
 
 
 async def _download_with_fallbacks(urls: list[str]) -> bytes | None:
-    """
-    Try each URL in order until one succeeds. Returns bytes or None if all fail.
-    """
+    """Try each URL in order until one succeeds. Returns bytes or None if all fail."""
     for i, url in enumerate(urls, start=1):
         data = await _download_media_bytes(url, attempt=i)
         if data:
@@ -127,7 +134,7 @@ async def _download_with_fallbacks(urls: list[str]) -> bytes | None:
             return data
         if i < len(urls):
             logger.info("media_download_trying_next_fallback", next_attempt=i + 1)
-            await asyncio.sleep(2)  # brief pause before next try
+            await asyncio.sleep(2)
     logger.warning("all_media_fallbacks_failed", total_urls=len(urls))
     return None
 
@@ -171,11 +178,11 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
             if not channel.username or not channel.display_name:
                 await _refresh_channel_info(client, channel)
 
-            signature = _build_channel_signature(channel)
+            # Pick a fresh beautiful admin signature for this post
+            signature = _get_admin_signature()
             media_sent = False
 
             if post.image_url:
-                # Parse potentially multiple fallback URLs packed into one field
                 image_urls = _parse_image_urls(post.image_url)
                 media_bytes = await _download_with_fallbacks(image_urls)
 
