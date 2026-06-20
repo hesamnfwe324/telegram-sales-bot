@@ -172,7 +172,6 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                 await _refresh_channel_info(client, channel)
 
             signature = _build_channel_signature(channel)
-            final_content = content + signature
             media_sent = False
 
             if post.image_url:
@@ -181,7 +180,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                 media_bytes = await _download_with_fallbacks(image_urls)
 
                 if media_bytes:
-                    caption = _truncate_caption(final_content, MAX_CAPTION_LENGTH)
+                    caption = _truncate_caption(content, MAX_CAPTION_LENGTH - len(signature)) + signature
                     is_video = _is_video_url(image_urls[0])
                     file_obj = io.BytesIO(media_bytes)
 
@@ -220,7 +219,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                                    channel_id=str(channel_id))
 
             if not media_sent:
-                text = _truncate_caption(final_content, MAX_TEXT_LENGTH)
+                text = _truncate_caption(content, MAX_TEXT_LENGTH - len(signature)) + signature
                 msg = await client.send_message(
                     channel.telegram_channel_id,
                     text,
