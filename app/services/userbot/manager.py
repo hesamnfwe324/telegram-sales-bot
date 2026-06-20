@@ -1,4 +1,5 @@
 from telethon import events
+from telethon.tl.functions.account import UpdateStatusRequest
 from sqlalchemy import select
 from app.db.session import AsyncSessionLocal
 from app.models.account import TelegramAccount
@@ -15,6 +16,7 @@ logger = get_logger(__name__)
 
 HEALTH_CHECK_INTERVAL = 60
 MAX_RECONNECT_FAILURES = 3
+ONLINE_PING_INTERVAL = 240  # seconds — ping every 4 min to stay online
 
 
 class UserBotManager:
@@ -93,6 +95,24 @@ class UserBotManager:
                 account.last_seen_at = datetime.now(timezone.utc)
                 await session.commit()
 
+    async def online_keeper_loop(self) -> None:
+        """
+        Keeps every connected account appearing Online 24/7.
+        Sends UpdateStatusRequest(offline=False) every ONLINE_PING_INTERVAL seconds.
+        Telegram marks a client offline after ~5 min of silence, so 4-min pings
+        are enough to stay permanently visible as online.
+        """
+        logger.info("online_keeper_started", interval_sec=ONLINE_PING_INTERVAL)
+        while self._running:
+            for account_id, client in list(self._clients.items()):
+                if client.is_connected:
+                    try:
+                        await client.client(UpdateStatusRequest(offline=False))
+                        logger.debug("online_ping_sent", account_id=account_id)
+                    except Exception as e:
+                        logger.warning("online_ping_failed", account_id=account_id, error=str(e))
+            await asyncio.sleep(ONLINE_PING_INTERVAL)
+
     async def health_check_loop(self) -> None:
         while self._running:
             await asyncio.sleep(HEALTH_CHECK_INTERVAL)
@@ -118,11 +138,18 @@ class UserBotManager:
         self._running = True
         await self.load_accounts()
         asyncio.create_task(self.health_check_loop())
+        asyncio.create_task(self.online_keeper_loop())
         logger.info("userbot_manager_started", accounts=len(self._clients))
 
     async def stop(self) -> None:
         self._running = False
         for client in self._clients.values():
+            # Mark offline cleanly before disconnect
+            try:
+                if client.is_connected:
+                    await client.client(UpdateStatusRequest(offline=True))
+            except Exception:
+                pass
             await client.disconnect()
         self._clients.clear()
         self._reconnect_failures.clear()
