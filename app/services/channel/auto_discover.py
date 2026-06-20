@@ -85,7 +85,7 @@ async def discover_and_register_channels(userbot_manager, account_id: str) -> di
                     telegram_channel_id=tg_id,
                     username=ch["username"],
                     display_name=ch["title"],
-                    language="fa",
+                    language="en",
                     is_active=True,
                 )
                 session.add(channel)
