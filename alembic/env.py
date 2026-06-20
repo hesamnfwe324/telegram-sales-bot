@@ -16,6 +16,8 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+_use_ssl = settings.DATABASE_SSL or settings.APP_ENV == "production"
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
@@ -37,10 +39,13 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    section = config.get_section(config.config_ini_section, {})
+    connect_args = {"ssl": True} if _use_ssl else {}
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
