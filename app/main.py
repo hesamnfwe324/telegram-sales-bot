@@ -25,7 +25,6 @@ import asyncio
   except Exception as _e:
       _import_error = f"{type(_e).__name__}: {_e}"
       print(f"FATAL_IMPORT_ERROR: {_import_error}", file=sys.stderr, flush=True)
-      # Minimal stub so the rest of this module can reference these names
       class _FakeSettings:
           APP_NAME = "TelegramAgent"
           APP_ENV = "production"
@@ -42,11 +41,69 @@ import asyncio
 
   _userbot_task: asyncio.Task | None = None
   _auto_poster_task: asyncio.Task | None = None
+  _bg_init_task: asyncio.Task | None = None
+
+
+  async def _timed(coro, name: str, timeout: float) -> bool:
+      """Run coro with a hard timeout. Appends to _startup_errors on failure."""
+      global _startup_errors
+      try:
+          await asyncio.wait_for(coro, timeout=timeout)
+          return True
+      except asyncio.TimeoutError:
+          msg = f"{name}: timed out after {timeout}s"
+          _startup_errors.append(msg)
+          print(f"STARTUP_TIMEOUT {msg}", file=sys.stderr, flush=True)
+          return False
+      except Exception as e:
+          msg = f"{name}: {type(e).__name__}: {e}"
+          _startup_errors.append(msg)
+          print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+          return False
+
+
+  async def _background_init() -> None:
+      """Heavy startup in background — app serves health checks immediately."""
+      global _userbot_task, _auto_poster_task
+
+      await _timed(init_db(), "init_db", 15.0)
+
+      userbot_ok = await _timed(userbot_manager.start(), "userbot", 30.0)
+      if userbot_ok:
+          _userbot_task = asyncio.create_task(userbot_manager.run_until_disconnected())
+
+      try:
+          from app.services.channel.publisher import set_userbot_manager as set_publisher_manager
+          set_publisher_manager(userbot_manager)
+      except Exception as e:
+          _startup_errors.append(f"publisher: {e}")
+
+      await _timed(_setup_admin_bot(), "admin_bot", 15.0)
+
+      try:
+          from app.services.channel.auto_poster import run_auto_poster
+          _auto_poster_task = asyncio.create_task(run_auto_poster(userbot_manager))
+      except Exception as e:
+          _startup_errors.append(f"auto_poster: {e}")
+
+      if _startup_errors:
+          print(f"BACKGROUND_INIT_ERRORS: {_startup_errors}", file=sys.stderr, flush=True)
+      else:
+          print("BACKGROUND_INIT_COMPLETE: all services started", file=sys.stderr, flush=True)
+
+
+  async def _setup_admin_bot() -> None:
+      try:
+          from app.services.admin_bot.bot import setup_admin_bot
+          await setup_admin_bot(userbot_manager)
+      except Exception as e:
+          _startup_errors.append(f"admin_bot: {e}")
+          raise
 
 
   @asynccontextmanager
   async def lifespan(app: FastAPI):
-      global _userbot_task, _auto_poster_task, _startup_errors
+      global _bg_init_task, _startup_errors
       _startup_errors = []
 
       if not _FULL_MODE:
@@ -58,63 +115,27 @@ import asyncio
 
       logger.info("application_starting", env=settings.APP_ENV)
 
-      try:
-          await get_redis()
-          logger.info("redis_connected")
-      except Exception as e:
-          msg = f"redis: {e}"
-          _startup_errors.append(msg)
-          print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+      # Fast init: Redis with 3s timeout (fakeredis fallback handles failure)
+      await _timed(get_redis(), "redis", 3.0)
 
-      try:
-          await init_db()
-          logger.info("database_initialized")
-      except Exception as e:
-          msg = f"init_db: {e}"
-          _startup_errors.append(msg)
-          print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
+      # Launch all slow init in background — health check responds immediately
+      _bg_init_task = asyncio.create_task(_background_init())
 
-      try:
-          await userbot_manager.start()
-          _userbot_task = asyncio.create_task(userbot_manager.run_until_disconnected())
-          logger.info("userbot_manager_started")
-      except Exception as e:
-          msg = f"userbot: {e}"
-          _startup_errors.append(msg)
-          print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
-
-      try:
-          from app.services.channel.publisher import set_userbot_manager as set_publisher_manager
-          set_publisher_manager(userbot_manager)
-      except Exception as e:
-          _startup_errors.append(f"publisher: {e}")
-
-      try:
-          from app.services.admin_bot.bot import setup_admin_bot
-          await setup_admin_bot(userbot_manager)
-      except Exception as e:
-          msg = f"admin_bot: {e}"
-          _startup_errors.append(msg)
-          print(f"STARTUP_ERROR {msg}", file=sys.stderr, flush=True)
-
-      try:
-          from app.services.channel.auto_poster import run_auto_poster
-          _auto_poster_task = asyncio.create_task(run_auto_poster(userbot_manager))
-          logger.info("auto_poster_started")
-      except Exception as e:
-          _startup_errors.append(f"auto_poster: {e}")
-
-      if _startup_errors:
-          print(f"STARTUP_ERRORS: {_startup_errors}", file=sys.stderr, flush=True)
-      else:
-          logger.info("application_ready")
-
-      yield
+      logger.info("application_ready_serving")
+      yield  # ← health check responds HERE
 
       # ─── Shutdown ────────────────────────────────────────────────────────────
       if not _FULL_MODE:
           return
       logger.info("application_shutting_down")
+
+      if _bg_init_task and not _bg_init_task.done():
+          _bg_init_task.cancel()
+          try:
+              await _bg_init_task
+          except asyncio.CancelledError:
+              pass
+
       for task in (_auto_poster_task, _userbot_task):
           if task:
               task.cancel()
@@ -122,6 +143,7 @@ import asyncio
                   await task
               except asyncio.CancelledError:
                   pass
+
       try:
           await userbot_manager.stop()
       except Exception:
@@ -202,11 +224,13 @@ import asyncio
 
   @app.get("/api/startup-status")
   async def startup_status():
+      bg_done = _bg_init_task.done() if _bg_init_task else None
       return {
           "status": "degraded" if (_startup_errors or _import_error) else "ok",
           "import_error": _import_error,
           "startup_errors": _startup_errors,
           "full_mode": _FULL_MODE,
+          "background_init_complete": bg_done,
           "env": {
               "APP_ENV": settings.APP_ENV,
               "DATABASE_URL_set": bool(settings.DATABASE_URL),
