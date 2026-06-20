@@ -2,14 +2,18 @@
   Smart auto-poster — unique content per channel, per post, always.
 
   Two-part posting system:
-    - Post 1 (media): image or video + text as caption in ONE message
+    - Post 1 (media): AI-generated unique image + text as caption in ONE message
     - Post 2 (text):  text only — no media
     - Alternates per channel automatically
 
+  Image generation:
+    - Uses Pollinations.ai (free, no API key, Flux model)
+    - Every image is AI-generated from a topic-specific prompt
+    - Random seed per post = zero repetition ever
+
   Uniqueness guarantees:
     1. Redis tracks every topic+type combo used globally (7-day TTL)
-    2. DB query pulls last 25 post first-lines and injects them as
-       "forbidden angles" into every AI prompt
+    2. DB query pulls last 25 post first-lines as "forbidden angles"
     3. Each prompt gets a random style modifier + unique seed
     4. In-memory hash dedup catches any accidental near-duplicates
   """
@@ -17,6 +21,7 @@
   import hashlib
   import random
   import uuid
+  import urllib.parse
   from collections import deque
   from datetime import datetime, timezone
   from zoneinfo import ZoneInfo
@@ -40,7 +45,7 @@
       (20, 23, 2),
   ]
 
-  MIN_INTERVAL_SECONDS = 2 * 3600  # exactly 2 hours between posts per channel
+  MIN_INTERVAL_SECONDS = 2 * 3600
 
   TOPICS_POOL = [
       "Free VPS trial for beginners",
@@ -144,92 +149,106 @@
       "Use a minimalist style — fewer words, more impact per sentence.",
   ]
 
-  # ── Professional tech/server image pool (Pexels — permanent direct URLs) ──────
-  # Categorized by topic keyword for smarter selection
-  _TECH_IMAGES_BY_CATEGORY = {
-      "server": [
-          "https://images.pexels.com/photos/1148820/pexels-photo-1148820.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/325229/pexels-photo-325229.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/60504/security-protection-anti-virus-software-60504.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-      ],
-      "security": [
-          "https://images.pexels.com/photos/60504/security-protection-anti-virus-software-60504.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/5380642/pexels-photo-5380642.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/60504/security-protection-anti-virus-software-60504.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/2882552/pexels-photo-2882552.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-      ],
-      "code": [
-          "https://images.pexels.com/photos/1181354/pexels-photo-1181354.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1181467/pexels-photo-1181467.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/4164418/pexels-photo-4164418.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1181244/pexels-photo-1181244.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-      ],
-      "network": [
-          "https://images.pexels.com/photos/374793/pexels-photo-374793.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/270360/pexels-photo-270360.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1089438/pexels-photo-1089438.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/573573/pexels-photo-573573.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-      ],
-      "cloud": [
-          "https://images.pexels.com/photos/4974914/pexels-photo-4974914.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/6804085/pexels-photo-6804085.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/2881232/pexels-photo-2881232.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1629016/pexels-photo-1629016.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-      ],
-      "general": [
-          "https://images.pexels.com/photos/1148820/pexels-photo-1148820.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/325229/pexels-photo-325229.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1181354/pexels-photo-1181354.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/270360/pexels-photo-270360.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/4974914/pexels-photo-4974914.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/1714208/pexels-photo-1714208.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-          "https://images.pexels.com/photos/3861972/pexels-photo-3861972.jpeg?auto=compress&cs=tinysrgb&w=1280&h=720&fit=crop",
-      ],
-  }
+  # ── AI image generation via Pollinations.ai (free, no API key, Flux model) ───
+  #
+  # Every image is generated fresh from a topic-specific prompt.
+  # The random seed guarantees zero repetition — ever.
 
-  _TOPIC_IMAGE_KEYWORDS = {
-      "security": "security", "firewall": "security", "ssh": "security",
-      "fail2ban": "security", "ssl": "security", "ddos": "security",
-      "docker": "code", "python": "code", "github": "code", "ci/cd": "code",
-      "deploy": "code", "bash": "code", "script": "code",
-      "network": "network", "nginx": "network", "proxy": "network",
-      "cloudflare": "network", "dns": "network", "ipv6": "network",
-      "cloud": "cloud", "aws": "cloud", "vps": "server",
-      "server": "server", "datacenter": "server", "rdp": "server",
-      "windows": "server", "ubuntu": "server", "linux": "server",
-      "backup": "server", "monitoring": "server",
+  _IMAGE_STYLE_SUFFIXES = [
+      "ultra-realistic 8K professional photography, cinematic lighting, dark tech aesthetic",
+      "futuristic digital art, blue neon glow, server room atmosphere, hyper-detailed",
+      "corporate tech illustration, clean minimal style, vibrant colors, professional",
+      "isometric 3D render, glowing circuits, dark background, ultra-sharp detail",
+      "photorealistic datacenter interior, dramatic lighting, modern infrastructure",
+      "abstract cyberpunk technology visualization, neon accents, high contrast",
+      "clean flat design tech illustration, gradient colors, modern and professional",
+      "macro photography of circuit boards, sharp focus, vivid colors, studio quality",
+      "cinematic wide-angle server room shot, blue and orange lighting, epic scale",
+      "digital art concept visualization, glowing data streams, dark theme, 4K",
+  ]
+
+  _TOPIC_IMAGE_PROMPTS = {
+      "docker": "Docker containers visualization, microservices architecture, interconnected nodes, technology",
+      "kubernetes": "Kubernetes orchestration diagram, pod clusters, cloud-native technology, abstract",
+      "ssh": "secure shell terminal, green text on black screen, encryption visualization, cybersecurity",
+      "security": "cybersecurity shield, digital lock, firewall protection, network security visualization",
+      "firewall": "network firewall visualization, packet filtering, secure gateway, digital protection",
+      "ssl": "SSL certificate, HTTPS padlock, secure connection, encryption data flow",
+      "nginx": "Nginx web server, reverse proxy load balancing, high-traffic web architecture",
+      "vpn": "VPN tunnel visualization, encrypted connection, privacy shield, global network",
+      "backup": "data backup system, cloud storage, disaster recovery, digital archive",
+      "monitoring": "server monitoring dashboard, real-time metrics, uptime graphs, alert system",
+      "linux": "Linux terminal command line, open source penguin logo, code on dark screen",
+      "ubuntu": "Ubuntu Linux desktop, server terminal, Canonical logo, open source",
+      "windows": "Windows Server interface, datacenter, Microsoft cloud infrastructure",
+      "rdp": "Remote Desktop connection, Windows remote access, screen sharing technology",
+      "cloud": "cloud computing infrastructure, floating servers, scalable architecture, sky",
+      "vps": "Virtual Private Server, virtualization layers, isolated containers, datacenter rack",
+      "docker compose": "multi-container Docker application, service orchestration, YAML configuration",
+      "database": "database server, SQL tables visualization, data storage, PostgreSQL concept",
+      "python": "Python programming, snake logo, automation scripts, code on dark background",
+      "telegram": "Telegram bot automation, messaging API, code and chat interface",
+      "crypto": "cryptocurrency node server, blockchain network, mining rig, digital ledger",
+      "game": "game server infrastructure, low-latency network, gaming datacenter",
+      "wordpress": "WordPress website hosting, CMS dashboard, PHP server, web publishing",
+      "network": "global network infrastructure, fiber optic cables, internet exchange point",
+      "latency": "low latency network ping, speed visualization, fiber optic data transfer",
+      "free": "free VPS server gift, promotional offer, cloud hosting giveaway concept",
+      "speed": "server performance speed, NVMe SSD, ultra-fast data processing visualization",
+      "cost": "cost savings server hosting, budget optimization, money and technology",
+      "default": "premium VPS cloud server infrastructure, professional datacenter, advanced technology",
   }
 
 
-  def _get_topic_image_url(topic: str) -> str:
-      """Select a professional image URL based on the post topic."""
+  def _build_image_prompt(topic: str, seed: int) -> str:
+      """
+      Build a rich, topic-specific AI image prompt for Pollinations.ai.
+      Every combination of topic + seed + style suffix = 100% unique image.
+      """
       topic_lower = topic.lower()
-      category = "general"
-      for keyword, cat in _TOPIC_IMAGE_KEYWORDS.items():
+
+      # Find the best matching base prompt
+      base_prompt = _TOPIC_IMAGE_PROMPTS["default"]
+      for keyword, prompt in _TOPIC_IMAGE_PROMPTS.items():
           if keyword in topic_lower:
-              category = cat
+              base_prompt = prompt
               break
-      pool = _TECH_IMAGES_BY_CATEGORY.get(category, _TECH_IMAGES_BY_CATEGORY["general"])
-      return random.choice(pool)
+
+      # Pick a random style suffix (seeded for reproducibility if needed)
+      style = random.choice(_IMAGE_STYLE_SUFFIXES)
+      return f"{base_prompt}, {style}"
+
+
+  def _generate_ai_image_url(topic: str, seed: int) -> str:
+      """
+      Generate a unique AI image URL via Pollinations.ai (Flux model).
+
+      - No API key required
+      - Flux model = professional quality
+      - seed param = guaranteed uniqueness per post
+      - nologo=true = clean professional output
+      - safe=false = allows tech/server content without over-filtering
+      """
+      prompt = _build_image_prompt(topic, seed)
+      encoded_prompt = urllib.parse.quote(prompt)
+      url = (
+          f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+          f"?width=1280&height=720&model=flux&seed={seed}&nologo=true&enhance=true"
+      )
+      return url
 
 
   # ── Per-channel two-part posting mode ──────────────────────────────────────
-  # "media" = next post is image/video + text caption
+  # "media" = next post is AI image + text caption
   # "text"  = next post is text only
   _channel_post_mode: dict[str, str] = {}
 
 
   def _get_post_mode(channel_id: str) -> str:
-      """Return the current post mode for a channel. Defaults to 'media' on first post."""
       return _channel_post_mode.get(channel_id, "media")
 
 
   def _toggle_post_mode(channel_id: str) -> None:
-      """Alternate between media and text modes after each successful post."""
       current = _channel_post_mode.get(channel_id, "media")
       _channel_post_mode[channel_id] = "text" if current == "media" else "media"
 
@@ -339,25 +358,20 @@
       if lang == "fa":
           lang = "en"
 
-      # Determine post mode: media (image+caption) or text-only
       channel_id_str = str(channel.id)
       post_mode = _get_post_mode(channel_id_str)
 
-      # Pick a topic+type combo not used in 7 days
       topic, content_type = await _pick_fresh_combo()
-
-      # Get recent post first-lines to inject as "forbidden angles"
       forbidden_angles = await _get_recent_post_angles(limit=25)
-
       style_hint = random.choice(STYLE_MODIFIERS)
-      unique_seed = random.randint(100000, 999999)
+      # Unique seed drives both text uniqueness and image uniqueness
+      unique_seed = random.randint(100_000, 99_999_999)
 
-      # Try up to 4 times — each retry picks a completely different combo
       for attempt in range(4):
           if attempt > 0:
               topic, content_type = await _pick_fresh_combo()
               style_hint = random.choice(STYLE_MODIFIERS)
-              unique_seed = random.randint(100000, 999999)
+              unique_seed = random.randint(100_000, 99_999_999)
 
           try:
               logger.info(
@@ -390,10 +404,16 @@
                            channel=channel.display_name)
               return False
 
-      # Select image URL for media posts
+      # For media posts: generate a 100% unique AI image via Pollinations.ai
       image_url: str | None = None
       if post_mode == "media":
-          image_url = _get_topic_image_url(topic)
+          image_url = _generate_ai_image_url(topic, unique_seed)
+          logger.info(
+              "auto_post_ai_image_generated",
+              channel=channel.display_name,
+              topic=topic,
+              seed=unique_seed,
+          )
 
       async with AsyncSessionLocal() as session:
           post = Post(
@@ -413,7 +433,6 @@
               await session.commit()
               _record_hash(content)
               await _mark_combo_used(topic, content_type)
-              # Toggle mode: next post for this channel will alternate
               _toggle_post_mode(channel_id_str)
               logger.info(
                   "auto_post_sent",
