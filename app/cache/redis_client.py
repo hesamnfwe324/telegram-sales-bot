@@ -80,10 +80,10 @@ async def cache_incr(key: str, amount: int = 1, ttl: int = 3600) -> int:
     r = await get_redis()
     pipe = r.pipeline()
     if amount == 1:
-        await pipe.incr(key)
+        pipe.incr(key)
     else:
-        await pipe.incrby(key, amount)
-    await pipe.expire(key, ttl)
+        pipe.incrby(key, amount)
+    pipe.expire(key, ttl)
     results = await pipe.execute()
     return results[0]
 
