@@ -27,6 +27,9 @@ import io
 
   _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 
+  # Separator used to pack multiple fallback image URLs into one field
+  _URL_SEPARATOR = "|||"
+
 
   def set_userbot_manager(manager) -> None:
       global _userbot_manager
@@ -36,6 +39,13 @@ import io
   def _is_video_url(url: str) -> bool:
       lower = url.lower().split("?")[0]
       return any(lower.endswith(ext) for ext in _VIDEO_EXTENSIONS)
+
+
+  def _parse_image_urls(image_url: str) -> list[str]:
+      """Split a packed multi-URL field into a list of individual URLs."""
+      if not image_url:
+          return []
+      return [u.strip() for u in image_url.split(_URL_SEPARATOR) if u.strip()]
 
 
   def _truncate_caption(text: str, limit: int = MAX_CAPTION_LENGTH) -> str:
@@ -76,39 +86,50 @@ import io
               channel.display_name = title
               changed = True
           if changed:
-              logger.info(
-                  "channel_info_refreshed",
-                  channel_id=str(channel.id),
-                  username=channel.username,
-                  display_name=channel.display_name,
-              )
+              logger.info("channel_info_refreshed", channel_id=str(channel.id),
+                          username=channel.username, display_name=channel.display_name)
       except Exception as e:
-          logger.warning("channel_info_refresh_failed",
-                         channel_id=str(channel.id), error=str(e))
+          logger.warning("channel_info_refresh_failed", channel_id=str(channel.id), error=str(e))
 
 
-  async def _download_media_bytes(url: str, timeout: int = 90) -> bytes | None:
+  async def _download_media_bytes(url: str, attempt: int = 1, timeout: int = 90) -> bytes | None:
       """
-      Download image/video from a URL and return raw bytes.
-      Uses httpx with a generous timeout since AI image generation can be slow.
-      Returns None if download fails so caller can fall back to text-only.
+      Download image/video bytes from a URL.
+      Generous timeout because AI image generation (Pollinations.ai) can take 15-60s.
+      Returns None on failure so the caller can try the next fallback URL.
       """
       try:
           async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-              logger.info("media_download_start", url=url[:80])
+              logger.info("media_download_start", url=url[:80], attempt=attempt)
               response = await client.get(url)
               response.raise_for_status()
               data = response.content
-              content_type = response.headers.get("content-type", "")
-              logger.info(
-                  "media_download_done",
-                  size_kb=len(data) // 1024,
-                  content_type=content_type,
-              )
+              if len(data) < 1024:
+                  # Too small — likely an error page, not a real image
+                  logger.warning("media_download_too_small", size=len(data), attempt=attempt)
+                  return None
+              logger.info("media_download_done", size_kb=len(data) // 1024,
+                          content_type=response.headers.get("content-type", ""), attempt=attempt)
               return data
       except Exception as e:
-          logger.warning("media_download_failed", url=url[:80], error=str(e))
+          logger.warning("media_download_failed", url=url[:80], error=str(e), attempt=attempt)
           return None
+
+
+  async def _download_with_fallbacks(urls: list[str]) -> bytes | None:
+      """
+      Try each URL in order until one succeeds. Returns bytes or None if all fail.
+      """
+      for i, url in enumerate(urls, start=1):
+          data = await _download_media_bytes(url, attempt=i)
+          if data:
+              logger.info("media_download_success_on_attempt", attempt=i, total=len(urls))
+              return data
+          if i < len(urls):
+              logger.info("media_download_trying_next_fallback", next_attempt=i + 1)
+              await asyncio.sleep(2)  # brief pause before next try
+      logger.warning("all_media_fallbacks_failed", total_urls=len(urls))
+      return None
 
 
   async def publish_post(session: AsyncSession, post: Post) -> dict:
@@ -152,20 +173,19 @@ import io
 
               signature = _build_channel_signature(channel)
               final_content = content + signature
-
               media_sent = False
 
               if post.image_url:
-                  # Pre-download the media bytes (handles AI-generated images, slow URLs, redirects)
-                  media_bytes = await _download_media_bytes(post.image_url)
+                  # Parse potentially multiple fallback URLs packed into one field
+                  image_urls = _parse_image_urls(post.image_url)
+                  media_bytes = await _download_with_fallbacks(image_urls)
 
                   if media_bytes:
                       caption = _truncate_caption(final_content, MAX_CAPTION_LENGTH)
-                      is_video = _is_video_url(post.image_url)
+                      is_video = _is_video_url(image_urls[0])
                       file_obj = io.BytesIO(media_bytes)
 
                       if is_video:
-                          # Give the BytesIO a filename hint so Telethon knows it's a video
                           file_obj.name = "video.mp4"
                           msg = await client.send_file(
                               channel.telegram_channel_id,
@@ -193,22 +213,13 @@ import io
                           "signature": signature.strip(),
                       }
                       media_sent = True
-                      logger.info(
-                          "post_published_with_media",
-                          channel_id=str(channel_id),
-                          msg_id=msg.id,
-                          media_type=media_type,
-                          size_kb=len(media_bytes) // 1024,
-                      )
+                      logger.info("post_published_with_media", channel_id=str(channel_id),
+                                  msg_id=msg.id, media_type=media_type, size_kb=len(media_bytes) // 1024)
                   else:
-                      # Download failed — fall back to text-only
-                      logger.warning(
-                          "media_download_failed_sending_text_only",
-                          channel_id=str(channel_id),
-                      )
+                      logger.warning("all_media_downloads_failed_falling_back_to_text",
+                                     channel_id=str(channel_id))
 
               if not media_sent:
-                  # Text-only post (either no image_url or download failed)
                   text = _truncate_caption(final_content, MAX_TEXT_LENGTH)
                   msg = await client.send_message(
                       channel.telegram_channel_id,
@@ -222,11 +233,7 @@ import io
                       "media_type": None,
                       "signature": signature.strip(),
                   }
-                  logger.info(
-                      "post_published_text_only",
-                      channel_id=str(channel_id),
-                      msg_id=msg.id,
-                  )
+                  logger.info("post_published_text_only", channel_id=str(channel_id), msg_id=msg.id)
 
               channel.post_count = (channel.post_count or 0) + 1
               await increment_daily_stat("posts_published")
