@@ -68,12 +68,12 @@ from app.services.ai.engine import generate_content
       "windows": ["#WindowsServer", "#RDP", "#WindowsVPS", "#WinServer"],
       "ubuntu": ["#Ubuntu", "#Debian", "#LinuxServer", "#OpenSource"],
       "vps": ["#VPS", "#VirtualServer", "#CloudVPS", "#VPSHosting"],
-      "cloud": ["#CloudComputing", "#CloudServer", "#AWS", "#CloudHosting"],
+      "cloud": ["#CloudComputing", "#CloudServer", "#CloudHosting"],
       "speed": ["#ServerPerformance", "#FastHosting", "#NVMeSSD", "#LowLatency"],
       "ssl": ["#SSL", "#HTTPS", "#FreeCertificate", "#WebSecurity"],
       "monitoring": ["#ServerMonitoring", "#Uptime", "#DevOps", "#AlertSystem"],
       "vpn": ["#VPN", "#PrivateNetwork", "#VPNServer", "#PrivacyOnline"],
-      "bitcoin": ["#Crypto", "#CryptoNode", "#BlockchainHosting", "#DeFiServer"],
+      "crypto": ["#Crypto", "#CryptoNode", "#BlockchainHosting", "#DeFiServer"],
       "game": ["#GameServer", "#GameHosting", "#LowLatencyServer", "#GamingVPS"],
       "wordpress": ["#WordPress", "#CMS", "#WebHosting", "#WPServer"],
       "database": ["#Database", "#MySQL", "#PostgreSQL", "#DBServer"],
@@ -153,17 +153,14 @@ from app.services.ai.engine import generate_content
       base = HASHTAG_MAP.get(language, HASHTAG_MAP["en"])
       topic_lower = topic.lower()
 
-      # Find topic-specific hashtags
       topic_specific = []
       for keyword, tags in TOPIC_HASHTAG_MAP.items():
           if keyword in topic_lower:
               topic_specific.extend(tags)
 
-      # Deduplicate and shuffle
       topic_specific = list(set(topic_specific))
       random.shuffle(topic_specific)
 
-      # Build topic word tags
       topic_word_tags = []
       for word in topic.split():
           if len(word) > 4 and word.isalpha():
@@ -171,7 +168,6 @@ from app.services.ai.engine import generate_content
               if tag not in base and tag not in topic_specific:
                   topic_word_tags.append(tag)
 
-      # Combine: prefer topic-specific, fill with base
       shuffled_base = random.sample(base, min(len(base), count))
       combined = list(dict.fromkeys(
           topic_specific[:2] + topic_word_tags[:1] + shuffled_base
