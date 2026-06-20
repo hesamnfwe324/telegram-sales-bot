@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -7,7 +8,7 @@ _import_error: str = ""
 _startup_errors: list[str] = []
 _FULL_MODE = False
 
-# ─── Attempt all module-level imports ───────────────────────────────────────
+# ─── Attempt all module-level imports ───────────────────────────────────────────
 try:
     from fastapi import Request
     from fastapi.middleware.cors import CORSMiddleware
@@ -42,10 +43,37 @@ except Exception as _e:
 _userbot_task: asyncio.Task | None = None
 _auto_poster_task: asyncio.Task | None = None
 _bg_init_task: asyncio.Task | None = None
+_keep_alive_task: asyncio.Task | None = None
+
+KEEP_ALIVE_INTERVAL = 600  # 10 minutes — prevents Render free tier spin-down
+
+
+async def _keep_alive_loop() -> None:
+    """
+    Pings own health endpoint every 10 min so Render never spins down.
+    Render free tier shuts the process after 15 min of no incoming requests.
+    Without this, the userbot disconnects and the account appears offline.
+    """
+    import httpx
+    # Render sets RENDER_EXTERNAL_URL automatically for web services
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not base_url:
+        logger.info("keep_alive_disabled", reason="RENDER_EXTERNAL_URL not set")
+        return
+    ping_url = f"{base_url}/api/healthz"
+    logger.info("keep_alive_started", url=ping_url, interval_sec=KEEP_ALIVE_INTERVAL)
+    await asyncio.sleep(30)  # wait for server to fully start first
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(ping_url)
+                logger.info("keep_alive_ping", status=r.status_code)
+        except Exception as e:
+            logger.warning("keep_alive_ping_failed", error=str(e))
+        await asyncio.sleep(KEEP_ALIVE_INTERVAL)
 
 
 async def _timed(coro, name: str, timeout: float) -> bool:
-    """Run coro with a hard timeout. Appends to _startup_errors on failure."""
     global _startup_errors
     try:
         await asyncio.wait_for(coro, timeout=timeout)
@@ -63,7 +91,6 @@ async def _timed(coro, name: str, timeout: float) -> bool:
 
 
 async def _background_init() -> None:
-    """Heavy startup in background — app serves health checks immediately."""
     global _userbot_task, _auto_poster_task
 
     await _timed(init_db(), "init_db", 15.0)
@@ -103,7 +130,7 @@ async def _setup_admin_bot() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _bg_init_task, _startup_errors
+    global _bg_init_task, _startup_errors, _keep_alive_task
     _startup_errors = []
 
     if not _FULL_MODE:
@@ -115,26 +142,28 @@ async def lifespan(app: FastAPI):
 
     logger.info("application_starting", env=settings.APP_ENV)
 
-    # Fast init: Redis with 3s timeout (fakeredis fallback handles failure)
     await _timed(get_redis(), "redis", 3.0)
 
-    # Launch all slow init in background — health check responds immediately
+    # Start keep-alive loop immediately so Render never sleeps
+    _keep_alive_task = asyncio.create_task(_keep_alive_loop())
+
     _bg_init_task = asyncio.create_task(_background_init())
 
     logger.info("application_ready_serving")
-    yield  # health check responds from here
+    yield
 
-    # ─── Shutdown ────────────────────────────────────────────────────────────
+    # ─── Shutdown ────────────────────────────────────────────────────────────────
     if not _FULL_MODE:
         return
     logger.info("application_shutting_down")
 
-    if _bg_init_task and not _bg_init_task.done():
-        _bg_init_task.cancel()
-        try:
-            await _bg_init_task
-        except asyncio.CancelledError:
-            pass
+    for task in (_keep_alive_task, _bg_init_task):
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     for task in (_auto_poster_task, _userbot_task):
         if task:
@@ -237,6 +266,7 @@ async def startup_status():
             "GROQ_KEY_set": bool(settings.GROQ_API_KEY),
             "ADMIN_TOKEN_set": bool(settings.ADMIN_BOT_TOKEN),
             "REDIS_URL": settings.REDIS_URL,
+            "RENDER_EXTERNAL_URL": os.environ.get("RENDER_EXTERNAL_URL", "not set"),
         },
     }
 
