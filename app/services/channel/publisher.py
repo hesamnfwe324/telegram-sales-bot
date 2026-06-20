@@ -1,4 +1,6 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+import io
+  import httpx
+  from sqlalchemy.ext.asyncio import AsyncSession
   from sqlalchemy import select
   from app.models.channel import TelegramChannel
   from app.models.post import Post
@@ -13,12 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
   _userbot_manager = None
 
-  # Telegram caption limit for media posts (images/videos): 1024 chars
-  # Telegram message limit for text-only posts: 4096 chars
   MAX_CAPTION_LENGTH = 1020
   MAX_TEXT_LENGTH = 4090
 
-  # Pool of professional emojis — one is assigned permanently per channel
   _CHANNEL_EMOJIS = [
       "🌐", "🚀", "💡", "⚡", "🔥", "🛡️", "💎", "🎯",
       "🔮", "🌟", "💫", "🏆", "⚙️", "🖥️", "🔐", "📡",
@@ -26,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
       "🏔️", "🔱", "⚜️", "🌈", "🎖️", "🛰️",
   ]
 
-  # Video file extensions — used to detect if media_url is a video
   _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 
 
@@ -36,7 +34,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
   def _is_video_url(url: str) -> bool:
-      """Detect if the media URL is a video based on its extension."""
       lower = url.lower().split("?")[0]
       return any(lower.endswith(ext) for ext in _VIDEO_EXTENSIONS)
 
@@ -44,7 +41,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
   def _truncate_caption(text: str, limit: int = MAX_CAPTION_LENGTH) -> str:
       if len(text) <= limit:
           return text
-      # Truncate at last complete word/line before limit
       truncated = text[:limit - 3]
       last_newline = truncated.rfind("\n")
       if last_newline > limit // 2:
@@ -53,46 +49,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
   def _assign_channel_emoji(channel_id: str) -> str:
-      """Deterministically assign a unique emoji to a channel based on its ID."""
       hash_int = int(hashlib.md5(str(channel_id).encode()).hexdigest(), 16)
       return _CHANNEL_EMOJIS[hash_int % len(_CHANNEL_EMOJIS)]
 
 
   def _build_channel_signature(channel: TelegramChannel) -> str:
-      """
-      Build the signature line appended to every post.
-      Format:  <emoji> @username | Channel Name
-      """
       emoji = _assign_channel_emoji(str(channel.id))
-
       if channel.username:
           handle = f"@{channel.username.lstrip('@')}"
       else:
           handle = f"ID: `{channel.telegram_channel_id}`"
-
       name_part = f" | {channel.display_name}" if channel.display_name else ""
       return f"\n\n━━━━━━━━━━━━━━━━━━━━━\n{emoji} {handle}{name_part}"
 
 
   async def _refresh_channel_info(client, channel: TelegramChannel) -> None:
-      """
-      Fetch channel entity from Telegram and update username / display_name
-      if they are missing or stale. Silently skips on any error.
-      """
       try:
           entity = await client.get_entity(channel.telegram_channel_id)
           changed = False
-
           username = getattr(entity, "username", None)
           if username and channel.username != username:
               channel.username = username
               changed = True
-
           title = getattr(entity, "title", None)
           if title and channel.display_name != title:
               channel.display_name = title
               changed = True
-
           if changed:
               logger.info(
                   "channel_info_refreshed",
@@ -103,6 +85,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
       except Exception as e:
           logger.warning("channel_info_refresh_failed",
                          channel_id=str(channel.id), error=str(e))
+
+
+  async def _download_media_bytes(url: str, timeout: int = 90) -> bytes | None:
+      """
+      Download image/video from a URL and return raw bytes.
+      Uses httpx with a generous timeout since AI image generation can be slow.
+      Returns None if download fails so caller can fall back to text-only.
+      """
+      try:
+          async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+              logger.info("media_download_start", url=url[:80])
+              response = await client.get(url)
+              response.raise_for_status()
+              data = response.content
+              content_type = response.headers.get("content-type", "")
+              logger.info(
+                  "media_download_done",
+                  size_kb=len(data) // 1024,
+                  content_type=content_type,
+              )
+              return data
+      except Exception as e:
+          logger.warning("media_download_failed", url=url[:80], error=str(e))
+          return None
 
 
   async def publish_post(session: AsyncSession, post: Post) -> dict:
@@ -121,7 +127,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
       for channel_id_str in channel_ids:
           channel_id = uuid.UUID(channel_id_str) if isinstance(channel_id_str, str) else channel_id_str
-          result = await session.execute(select(TelegramChannel).where(TelegramChannel.id == channel_id))
+          result = await session.execute(
+              select(TelegramChannel).where(TelegramChannel.id == channel_id)
+          )
           channel = result.scalar_one_or_none()
 
           if not channel or not channel.is_active:
@@ -139,46 +147,68 @@ from sqlalchemy.ext.asyncio import AsyncSession
                   results[str(channel_id)] = {"status": "error", "reason": "no_connected_client"}
                   continue
 
-              # Auto-detect and cache username/display_name if missing
               if not channel.username or not channel.display_name:
                   await _refresh_channel_info(client, channel)
 
-              # Build the channel signature and append to content
               signature = _build_channel_signature(channel)
               final_content = content + signature
 
+              media_sent = False
+
               if post.image_url:
-                  # Send as media post: text becomes the caption (all in one message)
-                  caption = _truncate_caption(final_content, MAX_CAPTION_LENGTH)
-                  is_video = _is_video_url(post.image_url)
+                  # Pre-download the media bytes (handles AI-generated images, slow URLs, redirects)
+                  media_bytes = await _download_media_bytes(post.image_url)
 
-                  if is_video:
-                      msg = await client.send_file(
-                          channel.telegram_channel_id,
-                          post.image_url,
-                          caption=caption,
-                          parse_mode="md",
-                          supports_streaming=True,
+                  if media_bytes:
+                      caption = _truncate_caption(final_content, MAX_CAPTION_LENGTH)
+                      is_video = _is_video_url(post.image_url)
+                      file_obj = io.BytesIO(media_bytes)
+
+                      if is_video:
+                          # Give the BytesIO a filename hint so Telethon knows it's a video
+                          file_obj.name = "video.mp4"
+                          msg = await client.send_file(
+                              channel.telegram_channel_id,
+                              file_obj,
+                              caption=caption,
+                              parse_mode="md",
+                              supports_streaming=True,
+                          )
+                          media_type = "video"
+                      else:
+                          file_obj.name = "image.jpg"
+                          msg = await client.send_file(
+                              channel.telegram_channel_id,
+                              file_obj,
+                              caption=caption,
+                              parse_mode="md",
+                          )
+                          media_type = "image"
+
+                      results[str(channel_id)] = {
+                          "status": "published",
+                          "message_id": msg.id,
+                          "has_media": True,
+                          "media_type": media_type,
+                          "signature": signature.strip(),
+                      }
+                      media_sent = True
+                      logger.info(
+                          "post_published_with_media",
+                          channel_id=str(channel_id),
+                          msg_id=msg.id,
+                          media_type=media_type,
+                          size_kb=len(media_bytes) // 1024,
                       )
-                      media_type = "video"
                   else:
-                      msg = await client.send_file(
-                          channel.telegram_channel_id,
-                          post.image_url,
-                          caption=caption,
-                          parse_mode="md",
+                      # Download failed — fall back to text-only
+                      logger.warning(
+                          "media_download_failed_sending_text_only",
+                          channel_id=str(channel_id),
                       )
-                      media_type = "image"
 
-                  results[str(channel_id)] = {
-                      "status": "published",
-                      "message_id": msg.id,
-                      "has_media": True,
-                      "media_type": media_type,
-                      "signature": signature.strip(),
-                  }
-              else:
-                  # Text-only post
+              if not media_sent:
+                  # Text-only post (either no image_url or download failed)
                   text = _truncate_caption(final_content, MAX_TEXT_LENGTH)
                   msg = await client.send_message(
                       channel.telegram_channel_id,
@@ -192,17 +222,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
                       "media_type": None,
                       "signature": signature.strip(),
                   }
+                  logger.info(
+                      "post_published_text_only",
+                      channel_id=str(channel_id),
+                      msg_id=msg.id,
+                  )
 
               channel.post_count = (channel.post_count or 0) + 1
               await increment_daily_stat("posts_published")
-              logger.info(
-                  "post_published",
-                  channel_id=str(channel_id),
-                  msg_id=msg.id,
-                  username=channel.username,
-                  has_media=bool(post.image_url),
-                  media_type=results[str(channel_id)].get("media_type"),
-              )
               await asyncio.sleep(1)
 
           except Exception as e:
