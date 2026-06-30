@@ -1,5 +1,5 @@
 import asyncio
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -11,7 +11,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 router = Router()
 
-MAX_IPS = 8_000
+MAX_IPS = 5_000
 PORT = 3389
 
 COUNTRIES = {
@@ -64,12 +64,13 @@ async def cmd_scan(event: Message | CallbackQuery, state: FSMContext):
 async def on_country_cb(callback: CallbackQuery, state: FSMContext):
     cc = callback.data.split(":")[1]
     name = COUNTRIES.get(cc, cc.upper())
-    await callback.message.edit_text(
+    sent = await callback.message.answer(
         f"⏳ Fetching IP ranges for *{name}* ...",
         parse_mode="Markdown",
     )
     await callback.answer()
-    await _run_scan(callback.message, cc)
+    # Fire-and-forget background scan so webhook returns within 60s
+    asyncio.create_task(_bg_scan(callback.message.bot, sent.chat.id, cc))
 
 
 @router.callback_query(F.data == "scan_custom")
@@ -88,62 +89,69 @@ async def on_country_input(message: Message, state: FSMContext):
         await message.answer("❌ Must be exactly 2 letters. Try again:")
         return
     await state.clear()
-    status_msg = await message.answer(
-        f"⏳ Fetching IP ranges for {cc.upper()} ...",
-    )
-    await _run_scan(status_msg, cc)
+    sent = await message.answer(f"⏳ Fetching IP ranges for {cc.upper()} ...")
+    asyncio.create_task(_bg_scan(message.bot, sent.chat.id, cc))
 
 
-async def _run_scan(msg: Message, cc: str):
+async def _bg_scan(bot: Bot, chat_id: int, cc: str) -> None:
+    """Background task: runs full scan and sends results to chat."""
     from app.services.scanner.ip_ranges import get_country_cidr_blocks
     from app.services.scanner.port_scanner import scan_port
 
     try:
         cidrs = await get_country_cidr_blocks(cc)
     except ValueError as e:
-        await msg.answer(f"❌ {e}")
+        await bot.send_message(chat_id, f"❌ {e}")
         return
     except Exception as e:
-        await msg.answer(f"❌ Failed to fetch ranges: {e}")
+        await bot.send_message(chat_id, f"❌ Failed to fetch IP ranges: {e}")
         return
 
     if not cidrs:
-        await msg.answer(f"❌ No IP ranges for {cc.upper()}.")
+        await bot.send_message(chat_id, f"❌ No IP ranges for {cc.upper()}.")
         return
 
-    await msg.answer(
-        f"📡 Scan started\n"
-        f"Country: {cc.upper()} | CIDRs: {len(cidrs)}\n"
-        f"Max IPs: {MAX_IPS:,} | Port: {PORT} (RDP)\n\n"
-        "⏳ This may take 1-3 minutes ...",
+    await bot.send_message(
+        chat_id,
+        f"📡 *Scan started*\n"
+        f"Country: `{cc.upper()}` | CIDRs: `{len(cidrs)}`\n"
+        f"Max IPs to probe: `{MAX_IPS:,}`\n"
+        f"Port: `{PORT} (RDP)`\n\n"
+        "⏳ Running in background — results will appear here when done ...",
+        parse_mode="Markdown",
     )
+
     logger.info("rdp_scan_started", country=cc.upper(), cidrs=len(cidrs))
 
     try:
         found = await scan_port(cidrs, port=PORT, max_ips=MAX_IPS, timeout=1.2)
     except Exception as e:
         logger.error("rdp_scan_error", error=str(e))
-        await msg.answer(f"❌ Scan error: {e}")
+        await bot.send_message(chat_id, f"❌ Scan error: {e}")
         return
 
     logger.info("rdp_scan_done", country=cc.upper(), found=len(found))
 
     if not found:
-        await msg.answer(
+        await bot.send_message(
+            chat_id,
             f"✅ Scan done. No open RDP ports found in {MAX_IPS:,} sampled IPs.",
-            reply_markup=back_kb(),
         )
         return
 
-    chunk_size = 25
+    # Send results in chunks of 20 IPs per message
+    chunk_size = 20
     for i in range(0, len(found), chunk_size):
         chunk = found[i : i + chunk_size]
-        lines = "\n".join(f"{ip}:{PORT}" for ip in chunk)
-        header = "🟢 Open RDP found:\n" if i == 0 else "🟢 (cont.)\n"
-        await msg.answer(header + lines)
-        await asyncio.sleep(0.3)
+        lines = "\n".join(f"`{ip}:{PORT}`" for ip in chunk)
+        header = "🟢 *Open RDP found:*\n" if i == 0 else "🟢 *(cont.)*\n"
+        await bot.send_message(chat_id, header + lines, parse_mode="Markdown")
+        await asyncio.sleep(0.5)
 
-    await msg.answer(
-        f"✅ Scan complete! Found {len(found)} IPs with RDP open (from {MAX_IPS:,} sampled).",
-        reply_markup=back_kb(),
+    await bot.send_message(
+        chat_id,
+        f"✅ *Scan complete!*\n"
+        f"Found `{len(found)}` IPs with port `{PORT}` open\n"
+        f"(out of `{MAX_IPS:,}` randomly sampled IPs from {cc.upper()})",
+        parse_mode="Markdown",
     )
