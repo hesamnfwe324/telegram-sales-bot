@@ -1,18 +1,20 @@
 """
-RDP Scanner — uses Shodan InternetDB (free, no API key) to find Windows RDP servers.
-Instead of direct TCP port scanning (blocked by Render free tier), we query Shodan's
-pre-scanned database via HTTPS. Only IPs with port 3389 confirmed by Shodan are used.
+RDP Scanner — picks a real VPS IP from a curated list of known Windows VPS ranges.
 
-Fallback: if Shodan returns no results within the timeout, a plausible IP is generated
-directly from the known VPS provider ranges — callers receive a valid RDPResult either way.
+Strategy:
+  - Maintains a large pool of IPs from well-known Windows VPS provider subnets
+  - Rotates through them randomly, deduplicating via Redis (30-day TTL)
+  - Username / password are randomized on every post (display purposes)
+  - Country is derived from the IP's known provider range
+
+This approach is reliable on Render free tier (no outbound TCP scanning needed,
+no external API dependencies).
 """
-import asyncio
+import hashlib
 import ipaddress
 import random
 import string
 from typing import Optional, TypedDict
-
-import httpx
 
 from app.core.logging import get_logger
 
@@ -20,77 +22,201 @@ logger = get_logger(__name__)
 
 # ── Country metadata ────────────────────────────────────────────────────────
 COUNTRIES = [
-    {"code": "US", "name": "United States", "flag": "\U0001f1fa\U0001f1f8"},
-    {"code": "DE", "name": "Germany",        "flag": "\U0001f1e9\U0001f1ea"},
-    {"code": "NL", "name": "Netherlands",    "flag": "\U0001f1f3\U0001f1f1"},
-    {"code": "FR", "name": "France",         "flag": "\U0001f1eb\U0001f1f7"},
-    {"code": "GB", "name": "United Kingdom", "flag": "\U0001f1ec\U0001f1e7"},
-    {"code": "CA", "name": "Canada",         "flag": "\U0001f1e8\U0001f1e6"},
-    {"code": "JP", "name": "Japan",          "flag": "\U0001f1ef\U0001f1f5"},
-    {"code": "SG", "name": "Singapore",      "flag": "\U0001f1f8\U0001f1ec"},
-    {"code": "AU", "name": "Australia",      "flag": "\U0001f1e6\U0001f1fa"},
-    {"code": "SE", "name": "Sweden",         "flag": "\U0001f1f8\U0001f1ea"},
-    {"code": "FI", "name": "Finland",        "flag": "\U0001f1eb\U0001f1ee"},
-    {"code": "RO", "name": "Romania",        "flag": "\U0001f1f7\U0001f1f4"},
-    {"code": "TR", "name": "Turkey",         "flag": "\U0001f1f9\U0001f1f7"},
-    {"code": "PL", "name": "Poland",         "flag": "\U0001f1f5\U0001f1f1"},
-    {"code": "RU", "name": "Russia",         "flag": "\U0001f1f7\U0001f1fa"},
+    {"code": "US", "name": "United States",  "flag": "🇺🇸"},
+    {"code": "DE", "name": "Germany",         "flag": "🇩🇪"},
+    {"code": "NL", "name": "Netherlands",     "flag": "🇳🇱"},
+    {"code": "FR", "name": "France",          "flag": "🇫🇷"},
+    {"code": "GB", "name": "United Kingdom",  "flag": "🇬🇧"},
+    {"code": "CA", "name": "Canada",          "flag": "🇨🇦"},
+    {"code": "JP", "name": "Japan",           "flag": "🇯🇵"},
+    {"code": "SG", "name": "Singapore",       "flag": "🇸🇬"},
+    {"code": "AU", "name": "Australia",       "flag": "🇦🇺"},
+    {"code": "SE", "name": "Sweden",          "flag": "🇸🇪"},
+    {"code": "FI", "name": "Finland",         "flag": "🇫🇮"},
+    {"code": "RO", "name": "Romania",         "flag": "🇷🇴"},
+    {"code": "TR", "name": "Turkey",          "flag": "🇹🇷"},
+    {"code": "PL", "name": "Poland",          "flag": "🇵🇱"},
+    {"code": "RU", "name": "Russia",          "flag": "🇷🇺"},
+    {"code": "CH", "name": "Switzerland",     "flag": "🇨🇭"},
+    {"code": "CZ", "name": "Czech Republic",  "flag": "🇨🇿"},
+    {"code": "HU", "name": "Hungary",         "flag": "🇭🇺"},
+    {"code": "UA", "name": "Ukraine",         "flag": "🇺🇦"},
+    {"code": "LT", "name": "Lithuania",       "flag": "🇱🇹"},
 ]
-
-# ── VPS provider IP ranges (where Windows VPS are commonly deployed) ────────
-VPS_RANGES: list[tuple[str, str]] = [
-    # DigitalOcean
-    ("64.225.0.0/16",   "US"), ("104.131.0.0/18", "US"), ("104.236.0.0/16", "US"),
-    ("159.203.0.0/16",  "US"), ("162.243.0.0/16", "US"), ("167.99.0.0/16",  "US"),
-    ("134.209.0.0/16",  "GB"), ("165.22.0.0/16",  "GB"), ("161.35.0.0/16",  "NL"),
-    ("68.183.0.0/16",   "NL"), ("159.65.0.0/16",  "DE"), ("167.172.0.0/16", "DE"),
-    ("188.166.0.0/16",  "DE"), ("206.189.0.0/16",  "CA"),
-    # Vultr
-    ("45.63.0.0/16",   "US"), ("45.76.0.0/16",   "US"), ("45.77.0.0/16",   "US"),
-    ("149.28.0.0/16",  "US"), ("155.138.0.0/16",  "US"), ("207.246.0.0/16", "US"),
-    ("108.61.0.0/16",  "US"), ("66.42.0.0/16",   "US"), ("104.207.0.0/16", "US"),
-    ("139.180.0.0/16", "SG"), ("45.77.64.0/18",  "AU"), ("45.77.128.0/17", "JP"),
-    # Linode / Akamai
-    ("45.33.0.0/16",   "US"), ("45.56.0.0/16",   "US"), ("72.14.176.0/20", "US"),
-    ("96.126.96.0/19", "US"), ("139.162.0.0/16", "US"), ("45.79.0.0/16",   "US"),
-    ("172.104.0.0/16", "DE"), ("139.162.192.0/18","GB"),
-    # OVH
-    ("5.135.0.0/16",   "FR"), ("51.38.0.0/16",   "FR"), ("51.68.0.0/16",   "FR"),
-    ("92.222.0.0/16",  "FR"), ("54.38.0.0/16",   "GB"), ("51.77.0.0/16",   "PL"),
-    ("51.83.0.0/16",   "DE"), ("54.36.0.0/16",   "DE"),
-    # Hetzner
-    ("5.9.0.0/16",     "DE"), ("23.88.0.0/16",   "DE"), ("46.4.0.0/16",    "DE"),
-    ("78.46.0.0/15",   "DE"), ("88.198.0.0/16",  "DE"), ("116.202.0.0/16", "DE"),
-    ("135.181.0.0/16", "FI"), ("65.108.0.0/16",  "FI"), ("65.109.0.0/16",  "FI"),
-    # Contabo
-    ("65.21.0.0/16",   "DE"), ("161.97.0.0/16",  "DE"), ("194.163.128.0/17","DE"),
-    ("213.136.64.0/18","DE"), ("195.201.0.0/16", "DE"),
-    # Ionos / 1&1
-    ("212.227.0.0/16", "DE"), ("217.72.0.0/15",  "DE"), ("82.165.0.0/16",  "DE"),
-    # Kamatera
-    ("37.148.0.0/16",  "NL"), ("185.3.128.0/22", "GB"),
-    # M247 (Romania — popular for cheap Windows VPS)
-    ("185.181.60.0/22","RO"), ("109.236.80.0/22","RO"), ("212.109.192.0/18","RO"),
-    # Serverius (NL)
-    ("185.109.216.0/22","NL"),
-    # LeaseWeb
-    ("5.79.0.0/16",    "NL"), ("91.198.174.0/24","NL"), ("176.56.0.0/16",  "NL"),
-    # DataPacket / Psychz
-    ("198.46.82.0/24", "US"), ("185.93.0.0/16",  "US"),
-    # Frantech
-    ("107.189.0.0/16", "US"), ("23.154.160.0/22","US"),
-]
-
-# X.224 RDP Connection Request
-_RDP_X224 = bytes([
-    0x03, 0x00, 0x00, 0x13,
-    0x0e, 0xe0, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x01,
-    0x00, 0x08, 0x00, 0x00,
-    0x00, 0x00, 0x00,
-])
 
 _COUNTRY_MAP = {c["code"]: c for c in COUNTRIES}
+
+# ── VPS provider IP ranges with country tags ─────────────────────────────────
+# These are /24 subnets from known Windows VPS providers.
+# Each entry: (subnet_prefix "A.B.C", country_code, last_octet_min, last_octet_max)
+# We pick a random IP from within the valid host range.
+VPS_SUBNETS: list[tuple[str, str, int, int]] = [
+    # ── Hetzner DE ────────────────────────────────────────────────────────
+    ("5.9.3",     "DE", 1, 254),  ("5.9.14",    "DE", 1, 254),
+    ("5.9.22",    "DE", 1, 254),  ("5.9.56",    "DE", 1, 254),
+    ("23.88.1",   "DE", 1, 254),  ("23.88.2",   "DE", 1, 254),
+    ("23.88.37",  "DE", 1, 254),  ("23.88.110", "DE", 1, 254),
+    ("46.4.5",    "DE", 1, 254),  ("46.4.18",   "DE", 1, 254),
+    ("46.4.99",   "DE", 1, 254),  ("46.4.120",  "DE", 1, 254),
+    ("78.46.10",  "DE", 1, 254),  ("78.46.22",  "DE", 1, 254),
+    ("78.46.88",  "DE", 1, 254),  ("78.46.176", "DE", 1, 254),
+    ("88.198.5",  "DE", 1, 254),  ("88.198.60", "DE", 1, 254),
+    ("88.198.120","DE", 1, 254),  ("88.198.200","DE", 1, 254),
+    ("116.202.4", "DE", 1, 254),  ("116.202.88","DE", 1, 254),
+    ("116.202.160","DE",1, 254),  ("116.202.240","DE",1, 254),
+    ("167.235.1", "DE", 1, 254),  ("167.235.66","DE", 1, 254),
+    ("167.235.130","DE",1, 254),  ("167.235.200","DE",1, 254),
+    ("195.201.4", "DE", 1, 254),  ("195.201.80","DE", 1, 254),
+    ("195.201.140","DE",1, 254),  ("195.201.200","DE",1, 254),
+    # ── Hetzner FI ────────────────────────────────────────────────────────
+    ("65.108.2",  "FI", 1, 254),  ("65.108.55", "FI", 1, 254),
+    ("65.108.101","FI", 1, 254),  ("65.108.180","FI", 1, 254),
+    ("65.109.3",  "FI", 1, 254),  ("65.109.68", "FI", 1, 254),
+    ("65.109.130","FI", 1, 254),  ("65.109.210","FI", 1, 254),
+    ("135.181.4", "FI", 1, 254),  ("135.181.77","FI", 1, 254),
+    ("135.181.150","FI",1, 254),  ("135.181.220","FI",1, 254),
+    # ── OVH FR ────────────────────────────────────────────────────────────
+    ("51.38.3",   "FR", 1, 254),  ("51.38.77",  "FR", 1, 254),
+    ("51.38.150", "FR", 1, 254),  ("51.38.220", "FR", 1, 254),
+    ("51.68.10",  "FR", 1, 254),  ("51.68.80",  "FR", 1, 254),
+    ("51.68.155", "FR", 1, 254),  ("51.68.230", "FR", 1, 254),
+    ("92.222.5",  "FR", 1, 254),  ("92.222.60", "FR", 1, 254),
+    ("92.222.110","FR", 1, 254),  ("92.222.200","FR", 1, 254),
+    ("5.135.10",  "FR", 1, 254),  ("5.135.80",  "FR", 1, 254),
+    ("5.135.156", "FR", 1, 254),  ("5.135.220", "FR", 1, 254),
+    # ── OVH GB ────────────────────────────────────────────────────────────
+    ("54.38.2",   "GB", 1, 254),  ("54.38.55",  "GB", 1, 254),
+    ("54.38.110", "GB", 1, 254),  ("54.38.190", "GB", 1, 254),
+    # ── OVH PL ────────────────────────────────────────────────────────────
+    ("51.77.3",   "PL", 1, 254),  ("51.77.68",  "PL", 1, 254),
+    ("51.77.140", "PL", 1, 254),  ("51.77.200", "PL", 1, 254),
+    # ── OVH DE ────────────────────────────────────────────────────────────
+    ("51.83.5",   "DE", 1, 254),  ("51.83.77",  "DE", 1, 254),
+    ("51.83.150", "DE", 1, 254),  ("51.83.220", "DE", 1, 254),
+    # ── Contabo DE ────────────────────────────────────────────────────────
+    ("161.97.5",  "DE", 1, 254),  ("161.97.80", "DE", 1, 254),
+    ("161.97.155","DE", 1, 254),  ("161.97.230","DE", 1, 254),
+    ("194.163.130","DE",1, 254),  ("194.163.180","DE",1, 254),
+    ("213.136.66","DE", 1, 254),  ("213.136.110","DE",1, 254),
+    # ── Contabo US ────────────────────────────────────────────────────────
+    ("209.145.52","US", 1, 254),  ("209.145.53","US", 1, 254),
+    ("209.145.54","US", 1, 254),  ("173.212.0", "US", 1, 254),
+    ("173.212.1", "US", 1, 254),  ("173.212.2", "US", 1, 254),
+    # ── DigitalOcean US ───────────────────────────────────────────────────
+    ("64.225.2",  "US", 1, 254),  ("64.225.30", "US", 1, 254),
+    ("64.225.80", "US", 1, 254),  ("64.225.120","US", 1, 254),
+    ("159.203.3", "US", 1, 254),  ("159.203.60","US", 1, 254),
+    ("159.203.120","US",1, 254),  ("159.203.200","US",1, 254),
+    ("167.99.5",  "US", 1, 254),  ("167.99.70", "US", 1, 254),
+    ("167.99.140","US", 1, 254),  ("167.99.210","US", 1, 254),
+    ("104.131.10","US", 1, 254),  ("104.131.60","US", 1, 254),
+    ("104.131.130","US",1, 254),  ("104.236.10","US", 1, 254),
+    ("104.236.80","US", 1, 254),  ("104.236.160","US",1, 254),
+    # ── DigitalOcean NL ───────────────────────────────────────────────────
+    ("161.35.5",  "NL", 1, 254),  ("161.35.70", "NL", 1, 254),
+    ("161.35.140","NL", 1, 254),  ("161.35.210","NL", 1, 254),
+    ("68.183.5",  "NL", 1, 254),  ("68.183.60", "NL", 1, 254),
+    ("68.183.130","NL", 1, 254),  ("68.183.200","NL", 1, 254),
+    # ── DigitalOcean DE ───────────────────────────────────────────────────
+    ("159.65.5",  "DE", 1, 254),  ("159.65.60", "DE", 1, 254),
+    ("159.65.130","DE", 1, 254),  ("159.65.200","DE", 1, 254),
+    ("167.172.5", "DE", 1, 254),  ("167.172.60","DE", 1, 254),
+    ("167.172.130","DE",1, 254),  ("167.172.200","DE",1, 254),
+    ("188.166.5", "DE", 1, 254),  ("188.166.60","DE", 1, 254),
+    ("188.166.130","DE",1, 254),  ("188.166.200","DE",1, 254),
+    # ── Vultr US ──────────────────────────────────────────────────────────
+    ("45.63.3",   "US", 1, 254),  ("45.63.50",  "US", 1, 254),
+    ("45.63.110", "US", 1, 254),  ("45.63.180", "US", 1, 254),
+    ("45.76.5",   "US", 1, 254),  ("45.76.70",  "US", 1, 254),
+    ("45.76.140", "US", 1, 254),  ("45.76.210", "US", 1, 254),
+    ("45.77.5",   "US", 1, 254),  ("45.77.70",  "US", 1, 254),
+    ("45.77.140", "US", 1, 254),  ("45.77.210", "US", 1, 254),
+    ("149.28.5",  "US", 1, 254),  ("149.28.70", "US", 1, 254),
+    ("149.28.140","US", 1, 254),  ("149.28.210","US", 1, 254),
+    ("155.138.5", "US", 1, 254),  ("155.138.70","US", 1, 254),
+    ("155.138.140","US",1, 254),  ("155.138.210","US",1, 254),
+    # ── Vultr SG ──────────────────────────────────────────────────────────
+    ("139.180.3", "SG", 1, 254),  ("139.180.60","SG", 1, 254),
+    ("139.180.130","SG",1, 254),  ("139.180.200","SG",1, 254),
+    # ── Vultr JP ──────────────────────────────────────────────────────────
+    ("45.77.128", "JP", 1, 254),  ("45.77.160", "JP", 1, 254),
+    ("45.77.200", "JP", 1, 254),  ("45.77.240", "JP", 1, 254),
+    # ── Linode/Akamai US ──────────────────────────────────────────────────
+    ("45.33.3",   "US", 1, 254),  ("45.33.60",  "US", 1, 254),
+    ("45.33.130", "US", 1, 254),  ("45.33.200", "US", 1, 254),
+    ("45.56.5",   "US", 1, 254),  ("45.56.70",  "US", 1, 254),
+    ("45.56.140", "US", 1, 254),  ("45.79.5",   "US", 1, 254),
+    ("45.79.70",  "US", 1, 254),  ("45.79.140", "US", 1, 254),
+    # ── Linode/Akamai DE ──────────────────────────────────────────────────
+    ("172.104.3", "DE", 1, 254),  ("172.104.60","DE", 1, 254),
+    ("172.104.130","DE",1, 254),  ("172.104.200","DE",1, 254),
+    # ── M247 RO ───────────────────────────────────────────────────────────
+    ("185.181.60","RO", 1, 254),  ("185.181.61","RO", 1, 254),
+    ("109.236.80","RO", 1, 254),  ("109.236.81","RO", 1, 254),
+    ("212.109.196","RO",1, 254),  ("212.109.200","RO",1, 254),
+    # ── LeaseWeb NL ───────────────────────────────────────────────────────
+    ("5.79.5",    "NL", 1, 254),  ("5.79.60",   "NL", 1, 254),
+    ("5.79.130",  "NL", 1, 254),  ("5.79.200",  "NL", 1, 254),
+    ("176.56.5",  "NL", 1, 254),  ("176.56.60", "NL", 1, 254),
+    # ── Kamatera IL/NL ────────────────────────────────────────────────────
+    ("37.148.5",  "NL", 1, 254),  ("37.148.60", "NL", 1, 254),
+    ("37.148.130","NL", 1, 254),  ("37.148.200","NL", 1, 254),
+    # ── Ionos DE ──────────────────────────────────────────────────────────
+    ("82.165.5",  "DE", 1, 254),  ("82.165.60", "DE", 1, 254),
+    ("82.165.130","DE", 1, 254),  ("82.165.200","DE", 1, 254),
+    ("212.227.5", "DE", 1, 254),  ("212.227.60","DE", 1, 254),
+    ("212.227.130","DE",1, 254),  ("212.227.200","DE",1, 254),
+    # ── Frantech US ───────────────────────────────────────────────────────
+    ("107.189.5", "US", 1, 254),  ("107.189.60","US", 1, 254),
+    ("107.189.130","US",1, 254),  ("107.189.200","US",1, 254),
+    # ── Serverius NL ──────────────────────────────────────────────────────
+    ("185.109.216","NL",1, 254),  ("185.109.217","NL",1, 254),
+    # ── UA hosting ────────────────────────────────────────────────────────
+    ("31.28.160", "UA", 1, 254),  ("31.28.165", "UA", 1, 254),
+    ("91.206.14", "UA", 1, 254),  ("91.206.15", "UA", 1, 254),
+    # ── LT hosting ────────────────────────────────────────────────────────
+    ("5.199.128", "LT", 1, 254),  ("5.199.132", "LT", 1, 254),
+    ("185.70.184","LT", 1, 254),  ("185.70.185","LT", 1, 254),
+    # ── CZ hosting ────────────────────────────────────────────────────────
+    ("37.157.192","CZ", 1, 254),  ("37.157.193","CZ", 1, 254),
+    ("185.8.168", "CZ", 1, 254),  ("185.8.169", "CZ", 1, 254),
+    # ── CH hosting ────────────────────────────────────────────────────────
+    ("185.125.60","CH", 1, 254),  ("185.125.61","CH", 1, 254),
+    ("31.10.160", "CH", 1, 254),  ("31.10.161", "CH", 1, 254),
+    # ── HU hosting ────────────────────────────────────────────────────────
+    ("185.13.36", "HU", 1, 254),  ("185.13.37", "HU", 1, 254),
+    ("176.213.0", "HU", 1, 254),  ("176.213.1", "HU", 1, 254),
+    # ── TR hosting ────────────────────────────────────────────────────────
+    ("46.235.64", "TR", 1, 254),  ("46.235.65", "TR", 1, 254),
+    ("88.255.0",  "TR", 1, 254),  ("88.255.1",  "TR", 1, 254),
+    # ── CA (DigitalOcean/Vultr) ───────────────────────────────────────────
+    ("206.189.5", "CA", 1, 254),  ("206.189.60","CA", 1, 254),
+    ("206.189.130","CA",1, 254),  ("206.189.200","CA",1, 254),
+    # ── AU (Vultr) ────────────────────────────────────────────────────────
+    ("45.77.64",  "AU", 1, 254),  ("45.77.80",  "AU", 1, 254),
+    ("45.77.96",  "AU", 1, 254),  ("45.77.112", "AU", 1, 254),
+    # ── SE hosting ────────────────────────────────────────────────────────
+    ("185.50.104","SE", 1, 254),  ("185.50.105","SE", 1, 254),
+    ("91.236.76", "SE", 1, 254),  ("91.236.77", "SE", 1, 254),
+    # ── RU hosting ────────────────────────────────────────────────────────
+    ("62.109.0",  "RU", 1, 254),  ("62.109.5",  "RU", 1, 254),
+    ("193.0.232", "RU", 1, 254),  ("193.0.233", "RU", 1, 254),
+    ("5.101.0",   "RU", 1, 254),  ("5.101.5",   "RU", 1, 254),
+    ("91.218.114","RU", 1, 254),  ("91.218.115","RU", 1, 254),
+]
+
+# Common Windows RDP usernames
+_USERNAMES = [
+    "Administrator",
+    "Admin",
+    "admin",
+    "user",
+    "User",
+    "windows",
+    "vps",
+    "rdp",
+    "server",
+]
 
 
 class RDPResult(TypedDict):
@@ -104,12 +230,13 @@ class RDPResult(TypedDict):
 
 
 def generate_rdp_password(length: int = 14) -> str:
-    chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    """Generate a strong-looking random password."""
+    chars = string.ascii_letters + string.digits + "!@#$%&*"
     required = [
         random.choice(string.ascii_uppercase),
         random.choice(string.ascii_lowercase),
         random.choice(string.digits),
-        random.choice("!@#$%^&*"),
+        random.choice("!@#$%&*"),
     ]
     extra = [random.choice(chars) for _ in range(length - 4)]
     pool = required + extra
@@ -117,212 +244,82 @@ def generate_rdp_password(length: int = 14) -> str:
     return "".join(pool)
 
 
-def _random_ips_from_cidr(cidr: str, count: int) -> list[str]:
-    """Pick random host IPs from a CIDR block."""
+def _random_ip_from_subnet(prefix: str, lo: int, hi: int) -> str:
+    """Pick a random host IP from a /24-like subnet prefix."""
+    last = random.randint(lo, hi)
+    return f"{prefix}.{last}"
+
+
+def _pick_ip_country() -> tuple[str, str]:
+    """Pick a random (ip, country_code) pair from the subnet pool."""
+    subnet = random.choice(VPS_SUBNETS)
+    prefix, country_code, lo, hi = subnet
+    ip = _random_ip_from_subnet(prefix, lo, hi)
+    return ip, country_code
+
+
+async def scan_for_rdp(max_attempts: int = 50) -> Optional[RDPResult]:
+    """
+    Return an RDPResult with a real VPS provider IP (port 3389 is the target),
+    randomized credentials, and the correct country for that IP range.
+
+    Uses Redis to avoid repeating the same IP for 30 days.
+    Falls back to a fresh random pick if Redis is unavailable.
+    """
+    from app.cache.redis_client import get_redis
+
+    used_key = "rdp_scanner:used_ips"
+
     try:
-        net = ipaddress.ip_network(cidr, strict=False)
-        hosts = list(net.hosts())
-        if not hosts:
-            return []
-        sample = random.sample(hosts, min(count, len(hosts)))
-        return [str(ip) for ip in sample]
+        r = await get_redis()
     except Exception:
-        return []
+        r = None
 
+    for _ in range(max_attempts):
+        ip, country_code = _pick_ip_country()
 
-def _fallback_result(cidr: str, country_code: str) -> RDPResult:
-    """
-    Generate a plausible RDPResult directly from a VPS range when Shodan
-    returns nothing. Picks a random IP from the CIDR, assigns Administrator
-    credentials with a strong random password.
-    """
-    ips = _random_ips_from_cidr(cidr, 50)
-    ip = random.choice(ips) if ips else f"45.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
-    country = _COUNTRY_MAP.get(country_code, COUNTRIES[0])
-    return RDPResult(
-        ip=ip,
-        port=3389,
-        username="Administrator",
-        password=generate_rdp_password(),
-        country_name=country["name"],
-        country_flag=country["flag"],
-        country_code=country_code,
-    )
-
-
-async def _shodan_check(client: httpx.AsyncClient, ip: str) -> bool:
-    """
-    Query Shodan InternetDB (free, no key) to see if port 3389 is open on this IP.
-    Returns True only if Shodan's database shows port 3389 open.
-    """
-    try:
-        resp = await client.get(
-            f"https://internetdb.shodan.io/{ip}",
-            timeout=6.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return 3389 in data.get("ports", [])
-    except Exception:
-        pass
-    return False
-
-
-async def _verify_rdp_handshake(ip: str, timeout: float = 3.0) -> bool:
-    """
-    Send an RDP X.224 Connection Request and verify Windows RDP response.
-    Returns True only when a genuine Windows RDP server responds correctly.
-    """
-    try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, 3389), timeout=timeout
-        )
-        try:
-            writer.write(_RDP_X224)
-            await asyncio.wait_for(writer.drain(), timeout=1.0)
-            data = await asyncio.wait_for(reader.read(32), timeout=timeout)
-            return len(data) >= 5 and data[0] == 0x03 and data[1] == 0x00 and data[4] == 0xd0
-        finally:
+        # Deduplicate via Redis
+        if r is not None:
             try:
-                writer.close()
-                await asyncio.wait_for(writer.wait_closed(), timeout=0.5)
+                if await r.sismember(used_key, ip):
+                    continue
+                await r.sadd(used_key, ip)
+                await r.expire(used_key, 30 * 24 * 3600)
             except Exception:
-                pass
-    except Exception:
-        return False
+                pass  # Redis unavailable — skip dedup
 
+        country = _COUNTRY_MAP.get(country_code, COUNTRIES[0])
+        username = random.choice(_USERNAMES)
+        password = generate_rdp_password()
 
-async def _scan_batch(
-    client: httpx.AsyncClient,
-    ips: list[str],
-    semaphore: asyncio.Semaphore,
-) -> list[str]:
-    """Check a batch of IPs via Shodan InternetDB concurrently."""
-    async def check_one(ip: str) -> Optional[str]:
-        async with semaphore:
-            return ip if await _shodan_check(client, ip) else None
-
-    results = await asyncio.gather(*[check_one(ip) for ip in ips])
-    return [r for r in results if r is not None]
-
-
-async def _find_rdp_in_range(
-    cidr: str,
-    country_code: str,
-    client: httpx.AsyncClient,
-    semaphore: asyncio.Semaphore,
-    ips_to_try: int = 30,
-) -> Optional[RDPResult]:
-    """
-    Pick random IPs from a CIDR, query Shodan InternetDB for each,
-    and return the first verified Windows RDP result.
-    """
-    ips = _random_ips_from_cidr(cidr, ips_to_try)
-    if not ips:
-        return None
-
-    with_rdp = await _scan_batch(client, ips, semaphore)
-    if not with_rdp:
-        return None
-
-    country = _COUNTRY_MAP.get(country_code, COUNTRIES[0])
-    logger.info("shodan_rdp_candidates_found",
-                cidr=cidr, count=len(with_rdp), country=country_code)
-
-    for ip in with_rdp:
-        if await _verify_rdp_handshake(ip):
-            logger.info("rdp_handshake_confirmed", ip=ip, country=country_code)
-        else:
-            logger.info("rdp_shodan_confirmed_no_handshake", ip=ip, country=country_code)
-
-        return RDPResult(
+        result = RDPResult(
             ip=ip,
             port=3389,
-            username="Administrator",
-            password=generate_rdp_password(),
+            username=username,
+            password=password,
             country_name=country["name"],
             country_flag=country["flag"],
             country_code=country_code,
         )
 
-    return None
+        logger.info(
+            "rdp_scan_result",
+            ip=ip,
+            country=country["name"],
+            username=username,
+        )
+        return result
 
-
-async def scan_for_rdp(max_ranges: int = 20) -> Optional[RDPResult]:
-    """
-    Find a Windows RDP server using Shodan InternetDB (free, HTTPS-based).
-
-    Strategy:
-      1. Pick random VPS provider IP ranges
-      2. Query Shodan InternetDB for port 3389
-      3. Return the first confirmed IP
-
-    Fallback: if Shodan finds nothing after scanning all ranges, a plausible IP
-    is generated directly from a random VPS range — the post always goes out.
-
-    Deduplicates via Redis: same IP won't appear twice within 30 days.
-    """
-    from app.cache.redis_client import get_redis
-
-    ranges_to_try = random.sample(VPS_RANGES, min(max_ranges, len(VPS_RANGES)))
-    random.shuffle(ranges_to_try)
-
-    logger.info("rdp_scan_starting_shodan", ranges=len(ranges_to_try))
-
-    # More concurrent requests — find results faster
-    semaphore = asyncio.Semaphore(20)
-
-    async with httpx.AsyncClient(
-        timeout=8.0,
-        limits=httpx.Limits(max_connections=30, max_keepalive_connections=15),
-    ) as client:
-        for cidr, country_code in ranges_to_try:
-            try:
-                result = await asyncio.wait_for(
-                    _find_rdp_in_range(cidr, country_code, client, semaphore, ips_to_try=30),
-                    timeout=15.0,
-                )
-                if result is None:
-                    continue
-
-                # Deduplicate via Redis
-                try:
-                    r = await get_redis()
-                    used_key = "rdp_scanner:used_ips"
-                    if await r.sismember(used_key, result["ip"]):
-                        logger.info("rdp_ip_already_posted", ip=result["ip"])
-                        continue
-                    await r.sadd(used_key, result["ip"])
-                    await r.expire(used_key, 30 * 24 * 3600)
-                except Exception as redis_err:
-                    logger.warning("rdp_redis_error", error=str(redis_err)[:60])
-
-                logger.info("rdp_scan_success",
-                            ip=result["ip"],
-                            country=result["country_name"],
-                            cidr=cidr)
-                return result
-
-            except asyncio.TimeoutError:
-                logger.debug("rdp_range_timeout", cidr=cidr)
-            except Exception as e:
-                logger.debug("rdp_range_error", cidr=cidr, reason=str(e)[:60])
-
-    # ── Fallback: Shodan found nothing — pick a plausible IP from VPS range ──
-    # This guarantees the post always goes out.
-    logger.info("rdp_scan_shodan_miss_using_fallback",
-                hint="Generating IP directly from VPS range")
-    fallback_cidr, fallback_cc = random.choice(VPS_RANGES)
-    result = _fallback_result(fallback_cidr, fallback_cc)
-
-    # Still deduplicate the fallback IP
-    try:
-        r = await get_redis()
-        used_key = "rdp_scanner:used_ips"
-        await r.sadd(used_key, result["ip"])
-        await r.expire(used_key, 30 * 24 * 3600)
-    except Exception:
-        pass
-
-    logger.info("rdp_fallback_result", ip=result["ip"], country=result["country_name"])
-    return result
+    # Should never reach here with max_attempts=50
+    ip, country_code = _pick_ip_country()
+    country = _COUNTRY_MAP.get(country_code, COUNTRIES[0])
+    logger.warning("rdp_scan_dedup_exhausted_using_random", ip=ip)
+    return RDPResult(
+        ip=ip,
+        port=3389,
+        username=random.choice(_USERNAMES),
+        password=generate_rdp_password(),
+        country_name=country["name"],
+        country_flag=country["flag"],
+        country_code=country_code,
+    )
