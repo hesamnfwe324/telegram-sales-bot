@@ -73,54 +73,33 @@ def generate_rdp_image_urls(seed: int) -> str:
 
 
 def _now() -> str:
-    return datetime.now(TEHRAN).strftime("%d %b %Y  ·  %H:%M")
+    return datetime.now(TEHRAN).strftime("%d %b %Y  \u00b7  %H:%M")
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # Template 1: SIGNAL
 # ─────────────────────────────────────────────────────────────────────────
 def _t_signal(ip, port, username, password, country_name, country_flag):
-    sep = "─" * 36
-    thick = "━" * 36
+    sep = "\u2500" * 36
+    thick = "\u2501" * 36
     return (
-        f"U0001f4e1  SIGNAL INTERCEPTED — FREE SERVER
-"
-        f"{sep}
-
-"
-        f"U0001f534  Target acquired. Full Windows access.
-"
-        f"⚡  Connection live — act fast before it's gone.
-
-"
-        f"{thick}
-"
-        f"U0001f5a5  SERVER    {ip}:{port}
-"
-        f"U0001f464  USER      {username}
-"
-        f"U0001f511  PASS      {password}
-"
-        f"U0001f30d  REGION    {country_flag}  {country_name}
-"
-        f"⏱  CAPTURED  {_now()}
-"
-        f"{thick}
-
-"
-        f"U0001f4f2  HOW TO CONNECT
-"
-        f"  Windows  →  Win+R  →  mstsc  →  enter IP
-"
-        f"  Mac/iOS  →  Microsoft Remote Desktop app
-"
-        f"  Android  →  RD Client (Microsoft)
-
-"
-        f"U0001f381  100% Free · No sign-up · No catch
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f4e1  SIGNAL INTERCEPTED \u2014 FREE SERVER\n"
+        f"{sep}\n\n"
+        "\U0001f534  Target acquired. Full Windows access.\n"
+        "\u26a1  Connection live \u2014 act fast before it's gone.\n\n"
+        f"{thick}\n"
+        f"\U0001f5a5  SERVER    {ip}:{port}\n"
+        f"\U0001f464  USER      {username}\n"
+        f"\U0001f511  PASS      {password}\n"
+        f"\U0001f30d  REGION    {country_flag}  {country_name}\n"
+        f"\u23f1  CAPTURED  {_now()}\n"
+        f"{thick}\n\n"
+        "\U0001f4f2  HOW TO CONNECT\n"
+        "  Windows  \u2192  Win+R  \u2192  mstsc  \u2192  enter IP\n"
+        "  Mac/iOS  \u2192  Microsoft Remote Desktop app\n"
+        "  Android  \u2192  RD Client (Microsoft)\n\n"
+        "\U0001f381  100% Free \u00b7 No sign-up \u00b7 No catch\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -128,42 +107,23 @@ def _t_signal(ip, port, username, password, country_name, country_flag):
 # Template 2: THUNDER
 # ─────────────────────────────────────────────────────────────────────────
 def _t_thunder(ip, port, username, password, country_name, country_flag):
-    dbl = "═" * 36
+    dbl = "\u2550" * 36
     return (
-        f"⚡  THUNDER DROP — LIVE FREE RDP
-"
-        f"{dbl}
-
-"
-        f"U0001f4a5  Scanner hit a live target.
-"
-        f"U0001f513  Full admin rights · Windows Server
-"
-        f"U0001f4cd  {country_flag}  {country_name}  ·  Port {port}
-
-"
-        f"  ┌───────────────────────────────────┐
-"
-        f"  │  U0001f310  {ip}:{port}
-"
-        f"  │  U0001f464  {username}
-"
-        f"  │  U0001f511  {password}
-"
-        f"  │  U0001f7e2  LIVE  ·  {_now()}
-"
-        f"  └───────────────────────────────────┘
-
-"
-        f"U0001f680  Connect: mstsc → paste IP → login
-"
-        f"✅  Works on PC · Mac · Android · iPhone
-
-"
-        f"U0001f4cc  Save this post · Share with friends!
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\u26a1  THUNDER DROP \u2014 LIVE FREE RDP\n"
+        f"{dbl}\n\n"
+        "\U0001f4a5  Scanner hit a live target.\n"
+        "\U0001f513  Full admin rights \u00b7 Windows Server\n"
+        f"\U0001f4cd  {country_flag}  {country_name}  \u00b7  Port {port}\n\n"
+        "  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n"
+        f"  \u2502  \U0001f310  {ip}:{port}\n"
+        f"  \u2502  \U0001f464  {username}\n"
+        f"  \u2502  \U0001f511  {password}\n"
+        f"  \u2502  \U0001f7e2  LIVE  \u00b7  {_now()}\n"
+        "  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+        "\U0001f680  Connect: mstsc \u2192 paste IP \u2192 login\n"
+        "\u2705  Works on PC \u00b7 Mac \u00b7 Android \u00b7 iPhone\n\n"
+        "\U0001f4cc  Save this post \u00b7 Share with friends!\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -171,48 +131,27 @@ def _t_thunder(ip, port, username, password, country_name, country_flag):
 # Template 3: VAULT
 # ─────────────────────────────────────────────────────────────────────────
 def _t_vault(ip, port, username, password, country_name, country_flag):
-    sep = "─" * 40
-    thick = "━" * 40
+    sep = "\u2500" * 40
+    thick = "\u2501" * 40
     return (
-        f"U0001f513  VAULT BREACHED — FREE ACCESS GRANTED
-"
-        f"{sep}
-
-"
-        f"U0001f3c6  Premium Windows Server
-"
-        f"U0001f48e  Worth $80–120/month — yours FREE right now
-"
-        f"U0001f4cd  {country_flag} {country_name}
-
-"
-        f"  U0001f310  IP      ›  {ip}
-"
-        f"  U0001f50c  PORT    ›  {port}
-"
-        f"  U0001f464  USER    ›  {username}
-"
-        f"  U0001f5dd  PASS    ›  {password}
-"
-        f"  ⏰  TIME    ›  {_now()}
-
-"
-        f"{thick}
-"
-        f"U0001f4f2  CONNECT IN 4 STEPS
-"
-        f"  ①  Open Remote Desktop (mstsc)
-"
-        f"  ②  Enter  {ip}:{port}
-"
-        f"  ③  Username: {username}
-"
-        f"  ④  Password: {password}  ✅
-"
-        f"{thick}
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f513  VAULT BREACHED \u2014 FREE ACCESS GRANTED\n"
+        f"{sep}\n\n"
+        "\U0001f3c6  Premium Windows Server\n"
+        "\U0001f48e  Worth $80\u2013120/month \u2014 yours FREE right now\n"
+        f"\U0001f4cd  {country_flag} {country_name}\n\n"
+        f"  \U0001f310  IP      \u203a  {ip}\n"
+        f"  \U0001f50c  PORT    \u203a  {port}\n"
+        f"  \U0001f464  USER    \u203a  {username}\n"
+        f"  \U0001f5dd  PASS    \u203a  {password}\n"
+        f"  \u23f0  TIME    \u203a  {_now()}\n\n"
+        f"{thick}\n"
+        "\U0001f4f2  CONNECT IN 4 STEPS\n"
+        "  \u2460  Open Remote Desktop (mstsc)\n"
+        f"  \u2461  Enter  {ip}:{port}\n"
+        f"  \u2462  Username: {username}\n"
+        f"  \u2463  Password: {password}  \u2705\n"
+        f"{thick}\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -220,37 +159,21 @@ def _t_vault(ip, port, username, password, country_name, country_flag):
 # Template 4: PHANTOM
 # ─────────────────────────────────────────────────────────────────────────
 def _t_phantom(ip, port, username, password, country_name, country_flag):
-    line = "─" * 38
+    line = "\u2500" * 38
     return (
-        f"U0001f441  PHANTOM SERVER — ZERO-COST ENTRY
-"
-        f"{line}
-
-"
-        f"◈  Found in the wild · Sharing for free
-"
-        f"◈  {country_flag} {country_name}  ·  Port {port}  ·  Full Windows
-
-"
-        f"{line}
-"
-        f"  SERVER  →  {ip}:{port}
-"
-        f"  LOGIN   →  {username}
-"
-        f"  SECRET  →  {password}
-"
-        f"  STATUS  →  U0001f7e2 ONLINE  ·  {_now()}
-"
-        f"{line}
-
-"
-        f"U0001f576  No logs · No registration · No cost
-"
-        f"U0001f4d6  Save this · You will need it later
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f441  PHANTOM SERVER \u2014 ZERO-COST ENTRY\n"
+        f"{line}\n\n"
+        f"\u25c8  Found in the wild \u00b7 Sharing for free\n"
+        f"\u25c8  {country_flag} {country_name}  \u00b7  Port {port}  \u00b7  Full Windows\n\n"
+        f"{line}\n"
+        f"  SERVER  \u2192  {ip}:{port}\n"
+        f"  LOGIN   \u2192  {username}\n"
+        f"  SECRET  \u2192  {password}\n"
+        f"  STATUS  \u2192  \U0001f7e2 ONLINE  \u00b7  {_now()}\n"
+        f"{line}\n\n"
+        "\U0001f576  No logs \u00b7 No registration \u00b7 No cost\n"
+        "\U0001f4d6  Save this \u00b7 You will need it later\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -258,44 +181,24 @@ def _t_phantom(ip, port, username, password, country_name, country_flag):
 # Template 5: NEXUS
 # ─────────────────────────────────────────────────────────────────────────
 def _t_nexus(ip, port, username, password, country_name, country_flag):
-    thick = "━" * 36
+    thick = "\u2501" * 36
     return (
-        f"U0001f310  NEXUS NODE ONLINE — FREE RDP
-"
-        f"{thick}
-
-"
-        f"U0001f517  New node detected in our network grid
-"
-        f"U0001f4cd  {country_flag} {country_name}  ·  U0001f7e2 LIVE
-
-"
-        f"  ┌─ ACCESS CREDENTIALS ────────────────┐
-"
-        f"  │  HOST  {ip}:{port}
-"
-        f"  │  USER  {username}
-"
-        f"  │  PASS  {password}
-"
-        f"  │  OS    Windows Server — Full Admin
-"
-        f"  │  TIME  {_now()}
-"
-        f"  └───────────────────────────────────┘
-
-"
-        f"U0001f6e0  QUICK CONNECT
-"
-        f"  →  Windows: Run «mstsc» · Enter IP above
-"
-        f"  →  Mobile:  Microsoft RD Client app
-
-"
-        f"⭐  Like & save · More drops every day!
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f310  NEXUS NODE ONLINE \u2014 FREE RDP\n"
+        f"{thick}\n\n"
+        "\U0001f517  New node detected in our network grid\n"
+        f"\U0001f4cd  {country_flag} {country_name}  \u00b7  \U0001f7e2 LIVE\n\n"
+        "  \u250c\u2500 ACCESS CREDENTIALS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n"
+        f"  \u2502  HOST  {ip}:{port}\n"
+        f"  \u2502  USER  {username}\n"
+        f"  \u2502  PASS  {password}\n"
+        "  \u2502  OS    Windows Server \u2014 Full Admin\n"
+        f"  \u2502  TIME  {_now()}\n"
+        "  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+        "\U0001f6e0  QUICK CONNECT\n"
+        "  \u2192  Windows: Run \u00abmstsc\u00bb \u00b7 Enter IP above\n"
+        "  \u2192  Mobile:  Microsoft RD Client app\n\n"
+        "\u2b50  Like & save \u00b7 More drops every day!\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -303,45 +206,25 @@ def _t_nexus(ip, port, username, password, country_name, country_flag):
 # Template 6: APEX
 # ─────────────────────────────────────────────────────────────────────────
 def _t_apex(ip, port, username, password, country_name, country_flag):
-    dbl = "═" * 38
-    thick = "━" * 38
+    dbl = "\u2550" * 38
+    thick = "\u2501" * 38
     return (
-        f"U0001f3c6  APEX DROP — FREE PREMIUM SERVER
-"
-        f"{dbl}
-
-"
-        f"U0001f4b0  Market value: ~$80–120 / month
-"
-        f"✅  Your price today: ABSOLUTELY FREE
-"
-        f"U0001f4cd  {country_flag} {country_name}  ·  Full Admin Access
-
-"
-        f"{thick}
-"
-        f"  U0001f5a5  {ip}:{port}
-"
-        f"  U0001f510  {username}  /  {password}
-"
-        f"  U0001f550  {_now()}
-"
-        f"{thick}
-
-"
-        f"⚡  INSTANT ACCESS — 3 EASY STEPS
-"
-        f"  1️⃣  Open mstsc (Windows) or RD Client (mobile)
-"
-        f"  2️⃣  Type  {ip}:{port}
-"
-        f"  3️⃣  Enter username & password above  U0001f389
-
-"
-        f"U0001f514  Follow for daily free server drops!
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f3c6  APEX DROP \u2014 FREE PREMIUM SERVER\n"
+        f"{dbl}\n\n"
+        "\U0001f4b0  Market value: ~$80\u2013120 / month\n"
+        "\u2705  Your price today: ABSOLUTELY FREE\n"
+        f"\U0001f4cd  {country_flag} {country_name}  \u00b7  Full Admin Access\n\n"
+        f"{thick}\n"
+        f"  \U0001f5a5  {ip}:{port}\n"
+        f"  \U0001f510  {username}  /  {password}\n"
+        f"  \U0001f550  {_now()}\n"
+        f"{thick}\n\n"
+        "\u26a1  INSTANT ACCESS \u2014 3 EASY STEPS\n"
+        "  1\ufe0f\u20e3  Open mstsc (Windows) or RD Client (mobile)\n"
+        f"  2\ufe0f\u20e3  Type  {ip}:{port}\n"
+        "  3\ufe0f\u20e3  Enter username & password above  \U0001f389\n\n"
+        "\U0001f514  Follow for daily free server drops!\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -349,42 +232,23 @@ def _t_apex(ip, port, username, password, country_name, country_flag):
 # Template 7: NOVA
 # ─────────────────────────────────────────────────────────────────────────
 def _t_nova(ip, port, username, password, country_name, country_flag):
-    sep = "─" * 36
+    sep = "\u2500" * 36
     return (
-        f"U0001f4ab  NOVA SERVER LAUNCH — 100% FREE
-"
-        f"{sep}
-
-"
-        f"U0001f31f  Brand new · Fully clean · No tricks
-"
-        f"U0001f513  Windows Server · {country_flag} {country_name}
-
-"
-        f"  ╭─────────────────────────────────╮
-"
-        f"  │  U0001f310  {ip}:{port}
-"
-        f"  │  U0001f464  {username}
-"
-        f"  │  U0001f511  {password}
-"
-        f"  │  U0001f5fa  {country_flag} {country_name}
-"
-        f"  │  ⏰  {_now()}
-"
-        f"  ╰─────────────────────────────────╯
-
-"
-        f"U0001f4f1  Works on ALL devices
-"
-        f"  Windows · macOS · iOS · Android
-
-"
-        f"❤️  Forward to a friend · Subscribe for more!
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f4ab  NOVA SERVER LAUNCH \u2014 100% FREE\n"
+        f"{sep}\n\n"
+        "\U0001f31f  Brand new \u00b7 Fully clean \u00b7 No tricks\n"
+        f"\U0001f513  Windows Server \u00b7 {country_flag} {country_name}\n\n"
+        "  \u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n"
+        f"  \u2502  \U0001f310  {ip}:{port}\n"
+        f"  \u2502  \U0001f464  {username}\n"
+        f"  \u2502  \U0001f511  {password}\n"
+        f"  \u2502  \U0001f5fa  {country_flag} {country_name}\n"
+        f"  \u2502  \u23f0  {_now()}\n"
+        "  \u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n\n"
+        "\U0001f4f1  Works on ALL devices\n"
+        "  Windows \u00b7 macOS \u00b7 iOS \u00b7 Android\n\n"
+        "\u2764\ufe0f  Forward to a friend \u00b7 Subscribe for more!\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -392,43 +256,23 @@ def _t_nova(ip, port, username, password, country_name, country_flag):
 # Template 8: SHADOW
 # ─────────────────────────────────────────────────────────────────────────
 def _t_shadow(ip, port, username, password, country_name, country_flag):
-    bar = "▬" * 18
+    bar = "\u25ac" * 18
     return (
-        f"U0001f311  SHADOW ACCESS — FREE WINDOWS SERVER
-"
-        f"{bar}
-
-"
-        f"U0001f575  Dropped by scanner · No cost · No catch
-"
-        f"⚡  {country_flag} {country_name}  ·  Port {port}  ·  LIVE NOW
-
-"
-        f"  ▌  SERVER  {ip}
-"
-        f"  ▌  PORT    {port}
-"
-        f"  ▌  USER    {username}
-"
-        f"  ▌  PASS    {password}
-"
-        f"  ▌  TIME    {_now()}
-"
-        f"  ▌  STATUS  U0001f7e2 ACTIVE
-
-"
-        f"{bar}
-
-"
-        f"U0001f517  Connect: mstsc → {ip}:{port}
-"
-        f"U0001f4a1  Use it for work, hosting, privacy — anything
-
-"
-        f"U0001f516  Bookmark this channel · Drops every day!
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f311  SHADOW ACCESS \u2014 FREE WINDOWS SERVER\n"
+        f"{bar}\n\n"
+        "\U0001f575  Dropped by scanner \u00b7 No cost \u00b7 No catch\n"
+        f"\u26a1  {country_flag} {country_name}  \u00b7  Port {port}  \u00b7  LIVE NOW\n\n"
+        f"  \u258c  SERVER  {ip}\n"
+        f"  \u258c  PORT    {port}\n"
+        f"  \u258c  USER    {username}\n"
+        f"  \u258c  PASS    {password}\n"
+        f"  \u258c  TIME    {_now()}\n"
+        "  \u258c  STATUS  \U0001f7e2 ACTIVE\n\n"
+        f"{bar}\n\n"
+        f"\U0001f517  Connect: mstsc \u2192 {ip}:{port}\n"
+        "\U0001f4a1  Use it for work, hosting, privacy \u2014 anything\n\n"
+        "\U0001f516  Bookmark this channel \u00b7 Drops every day!\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -436,46 +280,25 @@ def _t_shadow(ip, port, username, password, country_name, country_flag):
 # Template 9: TITAN
 # ─────────────────────────────────────────────────────────────────────────
 def _t_titan(ip, port, username, password, country_name, country_flag):
-    thick = "━" * 36
+    thick = "\u2501" * 36
     return (
-        f"U0001f531  TITAN SERVER — ZERO COST DROP
-"
-        f"{thick}
-
-"
-        f"U0001f4aa  High-power Windows Server · Completely free
-"
-        f"U0001f30d  Location: {country_flag} {country_name}  ·  U0001f7e2 LIVE & VERIFIED
-
-"
-        f"  ┌───────────────────────────────────┐
-"
-        f"  │  HOST  {ip}:{port}
-"
-        f"  │  USER  {username}
-"
-        f"  │  PASS  {password}
-"
-        f"  │  TIME  {_now()}
-"
-        f"  └───────────────────────────────────┘
-
-"
-        f"⚙️  STEP-BY-STEP GUIDE
-"
-        f"  →  Press Win+R  →  type mstsc  →  hit Enter
-"
-        f"  →  Computer:  {ip}:{port}
-"
-        f"  →  Username:  {username}
-"
-        f"  →  Password:  {password}
-
-"
-        f"U0001f680  No registration. No payment. Ever.
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f531  TITAN SERVER \u2014 ZERO COST DROP\n"
+        f"{thick}\n\n"
+        "\U0001f4aa  High-power Windows Server \u00b7 Completely free\n"
+        f"\U0001f30d  Location: {country_flag} {country_name}  \u00b7  \U0001f7e2 LIVE & VERIFIED\n\n"
+        "  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n"
+        f"  \u2502  HOST  {ip}:{port}\n"
+        f"  \u2502  USER  {username}\n"
+        f"  \u2502  PASS  {password}\n"
+        f"  \u2502  TIME  {_now()}\n"
+        "  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+        "\u2699\ufe0f  STEP-BY-STEP GUIDE\n"
+        "  \u2192  Press Win+R  \u2192  type mstsc  \u2192  hit Enter\n"
+        f"  \u2192  Computer:  {ip}:{port}\n"
+        f"  \u2192  Username:  {username}\n"
+        f"  \u2192  Password:  {password}\n\n"
+        "\U0001f680  No registration. No payment. Ever.\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
@@ -483,45 +306,24 @@ def _t_titan(ip, port, username, password, country_name, country_flag):
 # Template 10: MATRIX
 # ─────────────────────────────────────────────────────────────────────────
 def _t_matrix(ip, port, username, password, country_name, country_flag):
-    shade = "░" * 18
+    shade = "\u2591" * 18
     return (
-        f"U0001f4bb  MATRIX ENTRY — FREE SERVER ACCESS
-"
-        f"{shade}
-
-"
-        f"[ SYSTEM BREACH DETECTED ]
-"
-        f"[ TARGET: {country_flag} {country_name}  ·  PORT {port} ]
-"
-        f"[ STATUS: U0001f7e2 ONLINE  ·  ACCESS GRANTED ]
-
-"
-        f"  ▶  IP       {ip}
-"
-        f"  ▶  PORT     {port}
-"
-        f"  ▶  USER     {username}
-"
-        f"  ▶  PASS     {password}
-"
-        f"  ▶  TIME     {_now()}
-"
-        f"  ▶  OS       Windows Server · Full Admin
-
-"
-        f"{shade}
-
-"
-        f"⌨️  COMMAND: mstsc → {ip}:{port}
-"
-        f"U0001f4f1  MOBILE:  Microsoft RD Client app
-
-"
-        f"U0001f4be  Save this · Share this · Use it
-
-"
-        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
+        "\U0001f4bb  MATRIX ENTRY \u2014 FREE SERVER ACCESS\n"
+        f"{shade}\n\n"
+        "[ SYSTEM BREACH DETECTED ]\n"
+        f"[ TARGET: {country_flag} {country_name}  \u00b7  PORT {port} ]\n"
+        f"[ STATUS: \U0001f7e2 ONLINE  \u00b7  ACCESS GRANTED ]\n\n"
+        f"  \u25b6  IP       {ip}\n"
+        f"  \u25b6  PORT     {port}\n"
+        f"  \u25b6  USER     {username}\n"
+        f"  \u25b6  PASS     {password}\n"
+        f"  \u25b6  TIME     {_now()}\n"
+        "  \u25b6  OS       Windows Server \u00b7 Full Admin\n\n"
+        f"{shade}\n\n"
+        f"\u2328\ufe0f  COMMAND: mstsc \u2192 {ip}:{port}\n"
+        "\U0001f4f1  MOBILE:  Microsoft RD Client app\n\n"
+        "\U0001f4be  Save this \u00b7 Share this \u00b7 Use it\n\n"
+        f"\U0001f4e3  {CHANNEL_TAG}  \u00b7  {CHANNEL_LINK}"
     )
 
 
