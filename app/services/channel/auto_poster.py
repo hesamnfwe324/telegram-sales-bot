@@ -3,7 +3,7 @@ Smart auto-poster — unique content per channel, per post, always.
 
 Two-part posting system:
   - Post 1 (media): AI-generated unique image + text as caption in ONE message
-  - Post 2 (text):  text only — no media
+  - Post 2 (text):  RDP scan post — if scan fails, falls back to media post
   - Alternates per channel automatically
 
 Image generation (Pollinations.ai / Flux — free, no API key):
@@ -212,7 +212,7 @@ _channel_post_mode: dict[str, str] = {}
 
 
 def _get_post_mode(channel_id: str) -> str:
-    return _channel_post_mode.get(channel_id, "text")
+    return _channel_post_mode.get(channel_id, "media")
 
 
 def _toggle_post_mode(channel_id: str) -> None:
@@ -302,8 +302,9 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
     channel_id_str = str(channel.id)
     post_mode = _get_post_mode(channel_id_str)
 
-    # ── RDP Scanner post (replaces text-only post) ─────────────────────────
+    # ── RDP Scanner post (text slot) ───────────────────────────────────────
     if post_mode == "text":
+        rdp_posted = False
         try:
             from app.services.scanner.rdp_scanner import scan_for_rdp
             from app.services.content.rdp_post_builder import build_rdp_post
@@ -346,16 +347,21 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
                         await session.commit()
                         logger.error("rdp_post_send_failed",
                                      channel=channel.display_name, error=str(e))
+                        return False
+            else:
+                logger.info("rdp_scan_no_result_falling_back_to_media",
+                            channel=channel.display_name)
         except Exception as e:
-            logger.warning("rdp_scan_error",
+            logger.warning("rdp_scan_error_falling_back_to_media",
                            channel=channel.display_name, error=str(e))
+
+        # RDP scan failed or returned nothing — toggle to media and fall through
+        _toggle_post_mode(channel_id_str)
+        post_mode = "media"
+        logger.info("rdp_fallback_sending_media_post", channel=channel.display_name)
     # ── End RDP scanner block ──────────────────────────────────────────────
 
-    # Text slot is exclusively for RDP posts — skip if scan failed
-    if post_mode == "text":
-        logger.info("rdp_scan_failed_skipping", channel=channel.display_name)
-        return False
-
+    # Media post (AI-generated image + caption)
     topic, content_type = await _pick_fresh_combo()
     forbidden_angles = await _get_recent_post_angles(limit=25)
     style_hint = random.choice(STYLE_MODIFIERS)
