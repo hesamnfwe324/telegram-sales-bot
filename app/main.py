@@ -42,6 +42,7 @@ except Exception as _e:
 
 _userbot_task: asyncio.Task | None = None
 _auto_poster_task: asyncio.Task | None = None
+_rdp_pool_task: asyncio.Task | None = None
 _bg_init_task: asyncio.Task | None = None
 _keep_alive_task: asyncio.Task | None = None
 
@@ -126,6 +127,12 @@ async def _background_init() -> None:
         _auto_poster_task = asyncio.create_task(run_auto_poster(userbot_manager))
     except Exception as e:
         _startup_errors.append(f"auto_poster: {e}")
+
+    try:
+        from app.services.scanner.rdp_scanner import run_rdp_pool_builder
+        _rdp_pool_task = asyncio.create_task(run_rdp_pool_builder())
+    except Exception as e:
+        _startup_errors.append(f"rdp_pool_builder: {e}")
 
     if _startup_errors:
         print(f"BACKGROUND_INIT_ERRORS: {_startup_errors}", file=sys.stderr, flush=True)
