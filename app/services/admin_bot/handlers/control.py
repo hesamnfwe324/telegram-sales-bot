@@ -204,101 +204,114 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         )
         return
 
-    # ── Step 2: Build the post ───────────────────────────────────────────────
-    from app.services.content.rdp_post_builder import build_rdp_post
-    seed = random.randint(100_000, 99_999_999)
-    rdp_content, rdp_image_urls = build_rdp_post(
-        ip=rdp_result["ip"],
-        port=rdp_result["port"],
-        username=rdp_result["username"],
-        password=rdp_result["password"],
-        country_name=rdp_result["country_name"],
-        country_flag=rdp_result["country_flag"],
-        seed=seed,
-    )
-
-    country_flag = rdp_result["country_flag"]
-    country_name = rdp_result["country_name"]
-    ip = rdp_result["ip"]
-    port = rdp_result["port"]
-    username = rdp_result["username"]
-    password = rdp_result["password"]
-
-    await status_msg.edit_text(
-        f"✅ *سرور پیدا شد!* {country_flag} {country_name}\n\n"
-        f"🔗 IP: `{ip}`\n"
-        f"🔌 Port: `{port}`\n"
-        f"👤 User: `{username}`\n"
-        f"🔑 Pass: `{password}`\n\n"
-        "📤 *در حال ارسال به همه کانال‌ها...*",
-        parse_mode="Markdown",
-    )
-
-    # ── Step 3: Send to all active channels ──────────────────────────────────
-    from app.db.session import AsyncSessionLocal
-    from app.models.channel import TelegramChannel
-    from app.models.post import Post
-    from app.services.channel.publisher import publish_post
-    from sqlalchemy import select
-    from datetime import datetime, timezone
-
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(TelegramChannel).where(TelegramChannel.is_active == True)
+    # ── Step 2: Build post and send ─────────────────────────────────────────
+    try:
+        from app.services.content.rdp_post_builder import build_rdp_post
+        seed = random.randint(100_000, 99_999_999)
+        rdp_content, rdp_image_urls = build_rdp_post(
+            ip=rdp_result["ip"],
+            port=rdp_result["port"],
+            username=rdp_result["username"],
+            password=rdp_result["password"],
+            country_name=rdp_result["country_name"],
+            country_flag=rdp_result["country_flag"],
+            seed=seed,
         )
-        channels = result.scalars().all()
 
-        if not channels:
-            await status_msg.edit_text(
-                "❌ هیچ کانال فعالی وجود ندارد.",
-                reply_markup=back_kb(),
+        country_flag = rdp_result["country_flag"]
+        country_name = rdp_result["country_name"]
+        ip = rdp_result["ip"]
+        port = rdp_result["port"]
+        username = rdp_result["username"]
+        password = rdp_result["password"]
+
+        await status_msg.edit_text(
+            f"✅ *سرور پیدا شد!* {country_flag} {country_name}\n\n"
+            f"🔗 IP: `{ip}`\n"
+            f"🔌 Port: `{port}`\n"
+            f"👤 User: `{username}`\n"
+            f"🔑 Pass: `{password}`\n\n"
+            "📤 *در حال ارسال به همه کانال‌ها...*",
+            parse_mode="Markdown",
+        )
+
+        # ── Step 3: Send to all active channels ──────────────────────────────
+        from app.db.session import AsyncSessionLocal
+        from app.models.channel import TelegramChannel
+        from app.models.post import Post
+        from app.services.channel.publisher import publish_post
+        from sqlalchemy import select
+        from datetime import datetime, timezone
+
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(TelegramChannel).where(TelegramChannel.is_active == True)
             )
-            return
+            channels = result.scalars().all()
 
-        account_id = channels[0].account_id
-        channel_ids = [str(ch.id) for ch in channels]
+            if not channels:
+                await status_msg.edit_text(
+                    "❌ هیچ کانال فعالی وجود ندارد.",
+                    reply_markup=back_kb(),
+                )
+                return
 
-        post = Post(
-            account_id=account_id,
-            channel_ids=channel_ids,
-            content=rdp_content,
-            languages={"en": rdp_content},
-            image_url=rdp_image_urls,
-            status="scheduled",
-            scheduled_at=datetime.now(timezone.utc),
+            account_id = channels[0].account_id
+            channel_ids = [str(ch.id) for ch in channels]
+
+            post = Post(
+                account_id=account_id,
+                channel_ids=channel_ids,
+                content=rdp_content,
+                languages={"en": rdp_content},
+                image_url=rdp_image_urls,
+                status="scheduled",
+                scheduled_at=datetime.now(timezone.utc),
+            )
+            session.add(post)
+            await session.flush()
+
+            try:
+                await publish_post(session, post)
+                await session.commit()
+                logger.info(
+                    "admin_rdp_post_sent",
+                    channels=len(channels),
+                    ip=ip,
+                    country=country_name,
+                )
+            except Exception as pub_err:
+                post.status = "failed"
+                await session.commit()
+                logger.error("admin_rdp_post_send_failed", error=str(pub_err))
+                await status_msg.edit_text(
+                    f"❌ *خطا در ارسال به کانال‌ها:*\n`{str(pub_err)[:300]}`",
+                    parse_mode="Markdown",
+                    reply_markup=back_kb(),
+                )
+                return
+
+        await status_msg.edit_text(
+            f"✅ *پست سرور رایگان ارسال شد!*\n\n"
+            f"🌍 کشور: {country_flag} {country_name}\n"
+            f"🔗 IP: `{ip}`\n"
+            f"📡 کانال‌ها: `{len(channels)}` کانال\n"
+            "🖼 با تصویر: ✅",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
         )
-        session.add(post)
-        await session.flush()
 
+    except Exception as outer_err:
+        logger.error("ctrl_rdp_post_now_unhandled", error=str(outer_err))
         try:
-            await publish_post(session, post)
-            await session.commit()
-            logger.info(
-                "admin_rdp_post_sent",
-                channels=len(channels),
-                ip=ip,
-                country=country_name,
-            )
-        except Exception as e:
-            post.status = "failed"
-            await session.commit()
-            logger.error("admin_rdp_post_send_failed", error=str(e))
             await status_msg.edit_text(
-                f"❌ *خطا در ارسال:*\n`{str(e)[:300]}`",
+                f"❌ *خطای غیرمنتظره:*\n`{str(outer_err)[:400]}`\n\n"
+                "لطفاً دوباره امتحان کنید.",
                 parse_mode="Markdown",
                 reply_markup=back_kb(),
             )
-            return
-
-    await status_msg.edit_text(
-        f"✅ *پست سرور رایگان ارسال شد!*\n\n"
-        f"🌍 کشور: {country_flag} {country_name}\n"
-        f"🔗 IP: `{ip}`\n"
-        f"📡 کانال‌ها: `{len(channels)}` کانال\n"
-        "🖼 با تصویر: ✅",
-        parse_mode="Markdown",
-        reply_markup=back_kb(),
-    )
+        except Exception:
+            pass
 
 
 @router.message(Command("post_now"))
