@@ -96,46 +96,53 @@
 
     async def scan_for_rdp(max_ips: int = 5000) -> Optional[RDPResult]:
       """
-      Scan the next country in rotation for open RDP port (3389).
-      Returns one unique (never-used) IP + credentials, or None if scan yields nothing.
+      Scan countries in rotation until a unique unused RDP IP is found.
+      Retries the next country automatically — never gives up until all 25
+      countries have been tried in one round.
       """
-      country = await get_next_country()
-      country_code = country["code"]
-      country_name = country["name"]
-      country_flag = country["flag"]
+      for attempt in range(len(COUNTRIES)):
+          country = await get_next_country()
+          country_code = country["code"]
+          country_name = country["name"]
+          country_flag = country["flag"]
 
-      try:
-          logger.info("rdp_scan_starting", country=country_name, code=country_code)
-          cidrs = await get_country_cidr_blocks(country_code)
-          found_ips = await scan_port(cidrs, port=3389, max_ips=max_ips, timeout=1.2)
-          logger.info("rdp_scan_finished",
-                      country=country_name, open_ports_found=len(found_ips))
+          try:
+              logger.info("rdp_scan_starting",
+                          country=country_name, code=country_code, attempt=attempt + 1)
+              cidrs = await get_country_cidr_blocks(country_code)
+              found_ips = await scan_port(cidrs, port=3389, max_ips=max_ips, timeout=1.2)
+              logger.info("rdp_scan_finished",
+                          country=country_name, open_ports_found=len(found_ips))
 
-          if not found_ips:
-              logger.warning("rdp_scan_no_open_ports", country=country_name)
-              return None
+              if not found_ips:
+                  logger.warning("rdp_scan_no_open_ports_trying_next",
+                                 country=country_name, attempt=attempt + 1)
+                  continue
 
-          random.shuffle(found_ips)
-          for ip in found_ips:
-              if not await _is_ip_used(ip):
-                  await _mark_ip_used(ip)
-                  password = generate_rdp_password()
-                  logger.info("rdp_scan_ip_selected", country=country_name, ip=ip)
-                  return RDPResult(
-                      ip=ip,
-                      port=3389,
-                      username="Administrator",
-                      password=password,
-                      country_name=country_name,
-                      country_flag=country_flag,
-                      country_code=country_code,
-                  )
+              random.shuffle(found_ips)
+              for ip in found_ips:
+                  if not await _is_ip_used(ip):
+                      await _mark_ip_used(ip)
+                      password = generate_rdp_password()
+                      logger.info("rdp_scan_ip_selected",
+                                  country=country_name, ip=ip, attempt=attempt + 1)
+                      return RDPResult(
+                          ip=ip,
+                          port=3389,
+                          username="Administrator",
+                          password=password,
+                          country_name=country_name,
+                          country_flag=country_flag,
+                          country_code=country_code,
+                      )
 
-          logger.warning("rdp_scan_all_ips_already_used",
-                         country=country_name, total=len(found_ips))
-          return None
+              logger.warning("rdp_scan_all_ips_used_trying_next",
+                             country=country_name, total=len(found_ips), attempt=attempt + 1)
 
-      except Exception as e:
-          logger.error("rdp_scan_error", country=country_name, error=str(e))
-          return None
+          except Exception as e:
+              logger.error("rdp_scan_error_trying_next",
+                           country=country_name, error=str(e), attempt=attempt + 1)
+
+      logger.error("rdp_scan_exhausted_all_countries_no_ip_found")
+      return None
     
