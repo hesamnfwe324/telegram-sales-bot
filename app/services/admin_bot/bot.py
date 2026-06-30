@@ -10,6 +10,22 @@ from app.core.logging import get_logger
 from app.services.admin_bot.middlewares import AdminOnlyMiddleware
 from app.services.admin_bot.handlers import status, metrics, conversations, sales, publishing, logs, control, alerts, scanner
 
+
+def _make_storage():
+    """Use RedisStorage so FSM states survive bot restarts.
+    Falls back to MemoryStorage if Redis is not configured."""
+    try:
+        from aiogram.fsm.storage.redis import RedisStorage
+        url = settings.REDIS_URL
+        if url and url != "redis://localhost:6379/0":
+            storage = RedisStorage.from_url(url, key_prefix="admin_bot_fsm:")
+            logger_tmp = get_logger(__name__)
+            logger_tmp.info("fsm_storage_redis", url=url)
+            return storage
+    except Exception as e:
+        pass
+    return MemoryStorage()
+
 logger = get_logger(__name__)
 
 _bot: Bot = None
@@ -32,7 +48,7 @@ def get_bot() -> Bot | None:
 def get_dispatcher() -> Dispatcher:
     global _dp
     if _dp is None:
-        _dp = Dispatcher(storage=MemoryStorage())
+        _dp = Dispatcher(storage=_make_storage())
         _dp.message.middleware(AdminOnlyMiddleware())
         _dp.callback_query.middleware(AdminOnlyMiddleware())
 

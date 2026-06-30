@@ -90,12 +90,22 @@ async def show_stats(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "post_new")
 async def start_new_post(callback: CallbackQuery, state: FSMContext):
     await state.set_state(PostStates.choosing_type)
-    await callback.message.edit_text(
+    text = (
         "✏️ *Create New Post*\n\n"
-        "Choose the type of content you want to create:",
-        parse_mode="Markdown",
-        reply_markup=post_type_kb(),
+        "Choose the type of content you want to create:"
     )
+    try:
+        await callback.message.edit_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=post_type_kb(),
+        )
+    except Exception:
+        await callback.message.answer(
+            text,
+            parse_mode="Markdown",
+            reply_markup=post_type_kb(),
+        )
     await callback.answer()
 
 
@@ -105,13 +115,23 @@ async def choose_type(callback: CallbackQuery, state: FSMContext):
     type_label = TYPE_LABELS.get(content_type, content_type)
     await state.update_data(content_type=content_type)
     await state.set_state(PostStates.entering_topic)
-    await callback.message.edit_text(
+    text = (
         f"*Type selected:* {type_label}\n\n"
         "✍️ Now send me the *topic* for this post.\n\n"
-        "_Example: NVMe SSD speed advantages for WordPress / VPS vs shared hosting / 50% discount on VPS plans_",
-        parse_mode="Markdown",
-        reply_markup=post_image_skip_kb(),
+        "_Example: NVMe SSD speed advantages for WordPress / VPS vs shared hosting / 50% discount on VPS plans_"
     )
+    try:
+        await callback.message.edit_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=post_image_skip_kb(),
+        )
+    except Exception:
+        await callback.message.answer(
+            text,
+            parse_mode="Markdown",
+            reply_markup=post_image_skip_kb(),
+        )
     await callback.answer()
 
 

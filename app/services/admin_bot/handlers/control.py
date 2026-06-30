@@ -145,11 +145,13 @@ async def ctrl_post_now(callback: CallbackQuery):
 
     success = 0
     failed = 0
+    now_ts = asyncio.get_event_loop().time()
     for ch in channels:
-        _last_post_time[str(ch.id)] = 0
         ok = await _post_to_channel(_userbot_manager, ch)
         if ok:
             success += 1
+            # Reset cooldown so auto_poster waits full interval before posting again
+            _last_post_time[str(ch.id)] = now_ts
         else:
             failed += 1
         await asyncio.sleep(10)
