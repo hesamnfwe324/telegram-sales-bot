@@ -5,6 +5,7 @@ from app.services.admin_bot.keyboards import control_kb, back_kb
 from app.cache.redis_client import cache_set, cache_get
 from app.core.logging import get_logger
 import asyncio
+import random
 
 router = Router()
 logger = get_logger(__name__)
@@ -25,8 +26,12 @@ async def show_control(event: Message | CallbackQuery):
     status = "⏸ PAUSED" if posting_paused else "▶️ ACTIVE"
 
     text = (
-        f"⚙️ *System Control*\n\n"
-        f"📢 Posting status: *{status}*\n\n"
+        f"⚙️ *System Control*
+
+"
+        f"📢 Posting status: *{status}*
+
+"
         "Select an action:"
     )
     await msg.answer(text, parse_mode="Markdown", reply_markup=control_kb())
@@ -115,13 +120,20 @@ async def ctrl_scan_channels(callback: CallbackQuery):
             name = ch.get("title") or ch.get("username") or "بدون نام"
             report_lines.append(f"  • {name}")
 
-    channels_list = "\n".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
+    channels_list = "
+".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
 
     text = (
-        f"📡 *نتیجه اسکن کانال‌ها*\n\n"
-        f"🔍 پیدا شده: `{total_found}` کانال\n"
-        f"✅ ثبت جدید: `{total_added}` کانال\n\n"
-        f"*کانال‌های یافت‌شده:*\n{channels_list}"
+        f"📡 *نتیجه اسکن کانال‌ها*
+
+"
+        f"🔍 پیدا شده: `{total_found}` کانال
+"
+        f"✅ ثبت جدید: `{total_added}` کانال
+
+"
+        f"*کانال‌های یافت‌شده:*
+{channels_list}"
     )
     await callback.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
 
@@ -145,7 +157,6 @@ async def ctrl_post_now(callback: CallbackQuery):
     success = 0
     failed = 0
     for ch in channels:
-        # cooldown رو نادیده می‌گیریم — پست فوریه
         _last_post_time[str(ch.id)] = 0
         ok = await _post_to_channel(_userbot_manager, ch)
         if ok:
@@ -155,11 +166,164 @@ async def ctrl_post_now(callback: CallbackQuery):
         await asyncio.sleep(10)
 
     text = (
-        f"✅ پست فوری انجام شد\n\n"
-        f"📤 موفق: `{success}` کانال\n"
+        f"✅ پست فوری انجام شد
+
+"
+        f"📤 موفق: `{success}` کانال
+"
         f"❌ ناموفق: `{failed}` کانال"
     )
     await callback.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
+
+
+@router.callback_query(F.data == "ctrl_rdp_post_now")
+async def ctrl_rdp_post_now(callback: CallbackQuery):
+    """Send a free RDP/server post immediately to all active channels."""
+    status_msg = await callback.message.answer(
+        "🖥 *در حال اسکن برای سرور رایگان...*
+
+"
+        "⏳ اسکنر در حال جستجوی IP با پورت 3389 باز است. چند ثانیه صبر کنید...",
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+    if not _userbot_manager:
+        await status_msg.edit_text("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
+        return
+
+    # ── Step 1: Run RDP scanner ──────────────────────────────────────────────
+    try:
+        from app.services.scanner.rdp_scanner import scan_for_rdp
+        rdp_result = await scan_for_rdp()
+    except Exception as e:
+        logger.error("admin_rdp_scan_failed", error=str(e))
+        await status_msg.edit_text(
+            f"❌ *خطا در اسکن:*
+`{str(e)[:200]}`
+
+"
+            "اسکنر نتوانست IP پیدا کند.",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        return
+
+    if not rdp_result:
+        await status_msg.edit_text(
+            "⚠️ *هیچ سرور بازی پیدا نشد.*
+
+"
+            "اسکنر همه کشورها را بررسی کرد ولی پورت 3389 باز پیدا نکرد.
+"
+            "دوباره امتحان کنید.",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        return
+
+    # ── Step 2: Build the post ───────────────────────────────────────────────
+    from app.services.content.rdp_post_builder import build_rdp_post
+    seed = random.randint(100_000, 99_999_999)
+    rdp_content, rdp_image_urls = build_rdp_post(
+        ip=rdp_result["ip"],
+        port=rdp_result["port"],
+        username=rdp_result["username"],
+        password=rdp_result["password"],
+        country_name=rdp_result["country_name"],
+        country_flag=rdp_result["country_flag"],
+        seed=seed,
+    )
+
+    await status_msg.edit_text(
+        f"✅ *سرور پیدا شد!* {rdp_result['country_flag']} {rdp_result['country_name']}
+
+"
+        f"🔗 IP: `{rdp_result['ip']}`
+"
+        f"🔌 Port: `{rdp_result['port']}`
+"
+        f"👤 User: `{rdp_result['username']}`
+"
+        f"🔑 Pass: `{rdp_result['password']}`
+
+"
+        "📤 *در حال ارسال به همه کانال‌ها...*",
+        parse_mode="Markdown",
+    )
+
+    # ── Step 3: Send to all active channels ──────────────────────────────────
+    from app.db.session import AsyncSessionLocal
+    from app.models.channel import TelegramChannel
+    from app.models.post import Post
+    from app.services.channel.publisher import publish_post
+    from sqlalchemy import select
+    from datetime import datetime, timezone
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(TelegramChannel).where(TelegramChannel.is_active == True)
+        )
+        channels = result.scalars().all()
+
+        if not channels:
+            await status_msg.edit_text(
+                "❌ هیچ کانال فعالی وجود ندارد.",
+                reply_markup=back_kb(),
+            )
+            return
+
+        account_id = channels[0].account_id
+        channel_ids = [str(ch.id) for ch in channels]
+
+        post = Post(
+            account_id=account_id,
+            channel_ids=channel_ids,
+            content=rdp_content,
+            languages={"en": rdp_content},
+            image_url=rdp_image_urls,
+            status="scheduled",
+            scheduled_at=datetime.now(timezone.utc),
+        )
+        session.add(post)
+        await session.flush()
+
+        try:
+            await publish_post(session, post)
+            await session.commit()
+            published_count = len(channels)
+            logger.info(
+                "admin_rdp_post_sent",
+                channels=published_count,
+                ip=rdp_result["ip"],
+                country=rdp_result["country_name"],
+            )
+        except Exception as e:
+            post.status = "failed"
+            await session.commit()
+            logger.error("admin_rdp_post_send_failed", error=str(e))
+            await status_msg.edit_text(
+                f"❌ *خطا در ارسال:*
+`{str(e)[:300]}`",
+                parse_mode="Markdown",
+                reply_markup=back_kb(),
+            )
+            return
+
+    await status_msg.edit_text(
+        f"✅ *پست سرور رایگان ارسال شد!*
+
+"
+        f"🌍 کشور: {rdp_result['country_flag']} {rdp_result['country_name']}
+"
+        f"🔗 IP: `{rdp_result['ip']}`
+"
+        f"📡 کانال‌ها: `{len(channels)}` کانال
+"
+        f"🖼 با تصویر: ✅",
+        parse_mode="Markdown",
+        reply_markup=back_kb(),
+    )
 
 
 @router.message(Command("post_now"))
@@ -224,11 +388,17 @@ async def cmd_scan_channels(message: Message):
             name = ch.get("title") or ch.get("username") or "بدون نام"
             report_lines.append(f"  • {name}")
 
-    channels_list = "\n".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
+    channels_list = "
+".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
     text = (
-        f"📡 *نتیجه اسکن*\n\n"
-        f"🔍 پیدا شده: `{total_found}`\n"
-        f"✅ ثبت جدید: `{total_added}`\n\n"
+        f"📡 *نتیجه اسکن*
+
+"
+        f"🔍 پیدا شده: `{total_found}`
+"
+        f"✅ ثبت جدید: `{total_added}`
+
+"
         f"{channels_list}"
     )
     await message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
