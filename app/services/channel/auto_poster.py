@@ -39,7 +39,7 @@ PEAK_WINDOWS = [
     (20, 23, 2),
 ]
 
-MIN_INTERVAL_SECONDS = 2 * 3600
+MIN_INTERVAL_SECONDS = 3 * 3600
 
 TOPICS_POOL = [
     "Free VPS trial for beginners",
@@ -212,7 +212,7 @@ _channel_post_mode: dict[str, str] = {}
 
 
 def _get_post_mode(channel_id: str) -> str:
-    return _channel_post_mode.get(channel_id, "media")
+    return _channel_post_mode.get(channel_id, "text")
 
 
 def _toggle_post_mode(channel_id: str) -> None:
