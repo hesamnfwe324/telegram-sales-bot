@@ -8,7 +8,7 @@ from aiogram.types import Update
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.admin_bot.middlewares import AdminOnlyMiddleware
-from app.services.admin_bot.handlers import status, metrics, conversations, sales, publishing, logs, control, alerts
+from app.services.admin_bot.handlers import status, metrics, conversations, sales, publishing, logs, control, alerts, scanner
 
 logger = get_logger(__name__)
 
@@ -44,6 +44,7 @@ def get_dispatcher() -> Dispatcher:
         _dp.include_router(logs.router)
         _dp.include_router(control.router)
         _dp.include_router(alerts.router)
+        _dp.include_router(scanner.router)
 
     return _dp
 

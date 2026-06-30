@@ -12,6 +12,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     builder.button(text="📋 Logs", callback_data="logs")
     builder.button(text="⚙️ Control", callback_data="control")
     builder.button(text="🔔 Alerts", callback_data="alerts_menu")
+    builder.button(text="🔍 IP Scanner", callback_data="scanner")
     builder.adjust(2)
     return builder.as_markup()
 
