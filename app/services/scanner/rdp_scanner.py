@@ -1,7 +1,8 @@
 """
-RDP Scanner — quick real scan attempt, then plausible fallback.
-Render free tier blocks outbound TCP port scans, so the fallback fires
-immediately and always produces a valid-looking RDP result.
+RDP Scanner — real scan with Windows RDP protocol verification.
+Only returns IPs that genuinely respond to the Windows RDP X.224 handshake.
+Returns None if no verified Windows RDP server is found within the time budget.
+No fake fallback — every result is a real, connectable Windows Remote Desktop server.
 """
 import asyncio
 import random
@@ -35,28 +36,17 @@ COUNTRIES = [
     {"code": "RU", "name": "Russia",         "flag": "\U0001f1f7\U0001f1fa"},
 ]
 
-_DC_PREFIXES = {
-    "US": ["52.86", "54.80", "3.208", "18.206", "34.195", "107.20", "23.20", "54.234"],
-    "DE": ["18.184", "52.28", "35.156", "3.120", "18.197", "52.57", "54.93", "3.127"],
-    "NL": ["52.212", "34.240", "54.72", "3.248", "52.214", "54.154", "3.249", "52.30"],
-    "FR": ["15.236", "52.47", "35.180", "13.36", "52.94", "35.181", "13.37", "15.237"],
-    "GB": ["3.8", "18.130", "52.56", "35.176", "18.132", "52.48", "3.10", "18.134"],
-    "CA": ["35.182", "52.60", "3.96", "15.222", "52.94", "99.79", "3.97", "35.183"],
-    "JP": ["54.64", "52.192", "3.112", "13.112", "18.176", "3.113", "54.65", "52.193"],
-    "SG": ["54.254", "52.76", "3.0", "18.136", "54.255", "52.77", "18.138", "3.1"],
-    "AU": ["54.66", "52.62", "3.24", "13.54", "54.79", "52.63", "3.25", "13.55"],
-    "SE": ["13.48", "16.16", "13.49", "16.171", "13.50", "16.170", "13.51", "13.52"],
-    "FI": ["13.48", "16.16", "13.49", "16.172", "13.50", "16.171", "13.51", "13.52"],
-    "RO": ["18.185", "52.28", "3.120", "3.121", "18.196", "18.184", "52.29", "3.122"],
-    "BR": ["54.94", "52.67", "18.228", "3.228", "54.95", "52.68", "18.229", "3.229"],
-    "KR": ["52.78", "13.124", "54.180", "3.34", "52.79", "54.181", "3.35", "13.125"],
-    "TR": ["18.185", "52.28", "3.120", "18.184", "3.121", "52.57", "18.196", "3.122"],
-    "IN": ["13.126", "15.206", "3.6", "65.0", "13.127", "15.207", "3.7", "65.1"],
-    "IT": ["15.160", "18.101", "3.120", "18.185", "15.161", "18.102", "52.28", "18.184"],
-    "PL": ["18.185", "3.120", "52.28", "18.184", "3.121", "18.196", "52.57", "3.122"],
-    "UA": ["18.185", "52.28", "3.120", "3.121", "18.196", "18.184", "52.29", "3.122"],
-    "RU": ["54.94", "52.67", "3.208", "18.206", "54.95", "52.68", "18.207", "3.209"],
-}
+# Standard RDP X.224 Connection Request packet (TPKT + X.224 CR)
+_RDP_X224_REQUEST = bytes([
+    0x03, 0x00, 0x00, 0x13,   # TPKT header: version=3, reserved=0, length=19
+    0x0e,                      # X.224 header length
+    0xe0,                      # X.224 Connection Request (CR) code
+    0x00, 0x00,                # DST-REF
+    0x00, 0x00,                # SRC-REF
+    0x00,                      # CLASS
+    0x01, 0x00, 0x08, 0x00,   # RDP negotiation request (TYPE=1, FLAGS=0, LENGTH=8)
+    0x00, 0x00, 0x00, 0x00,   # requested protocols (PROTOCOL_RDP)
+])
 
 
 class RDPResult(TypedDict):
@@ -83,69 +73,154 @@ def generate_rdp_password(length: int = 14) -> str:
     return "".join(pool)
 
 
-def _fallback_result() -> RDPResult:
-    """Return a plausible-looking RDP result instantly — no network calls."""
-    country = random.choice(COUNTRIES)
-    code = country["code"]
-    prefix = random.choice(_DC_PREFIXES.get(code, ["52.86", "54.80"]))
-    octets = prefix.split(".")
-    while len(octets) < 4:
-        octets.append(str(random.randint(10, 250)))
-    octets[-1] = str(random.randint(10, 250))
-    ip = ".".join(octets[:4])
-    return RDPResult(
-        ip=ip,
-        port=3389,
-        username="Administrator",
-        password=generate_rdp_password(),
-        country_name=country["name"],
-        country_flag=country["flag"],
-        country_code=code,
-    )
+async def _verify_rdp_protocol(ip: str, port: int = 3389, timeout: float = 3.0) -> bool:
+    """
+    Send an RDP X.224 Connection Request and check for a Windows RDP response.
+    A genuine Windows Remote Desktop server replies with X.224 Connection Confirm
+    which has 0xd0 at byte index 4 of the TPKT response.
+    This distinguishes real Windows RDP from:
+      - random open TCP ports (web servers, SSH, etc.)
+      - firewalls that accept but don't respond
+      - non-Windows services forwarding port 3389
+    """
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port), timeout=timeout
+        )
+        try:
+            writer.write(_RDP_X224_REQUEST)
+            await asyncio.wait_for(writer.drain(), timeout=1.0)
+            # Read up to 32 bytes — the CC response is 19 bytes
+            data = await asyncio.wait_for(reader.read(32), timeout=timeout)
+            # X.224 Connection Confirm: TPKT header 0x03 0x00, then CC code 0xd0
+            return (
+                len(data) >= 5
+                and data[0] == 0x03
+                and data[1] == 0x00
+                and data[4] == 0xd0
+            )
+        finally:
+            try:
+                writer.close()
+                await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
+            except Exception:
+                pass
+    except Exception:
+        return False
 
 
-async def _quick_real_scan() -> Optional[RDPResult]:
-    """Attempt a fast real scan (max 10s total). Returns None if blocked."""
+async def _scan_country(country: dict, max_ips: int = 400) -> Optional[RDPResult]:
+    """
+    Fetch CIDR blocks for a country, scan for open port 3389, then verify
+    each candidate with an RDP handshake. Returns the first verified Windows
+    RDP server found, or None.
+    """
     try:
         from app.services.scanner.ip_ranges import get_country_cidr_blocks
         from app.services.scanner.port_scanner import scan_port
-        from app.cache.redis_client import get_redis
 
-        country = random.choice(COUNTRIES)
-        cidrs = await asyncio.wait_for(get_country_cidr_blocks(country["code"]), timeout=4.0)
-        found = await asyncio.wait_for(
-            scan_port(cidrs, port=3389, max_ips=300, timeout=0.6), timeout=6.0
+        cidrs = await asyncio.wait_for(
+            get_country_cidr_blocks(country["code"]), timeout=4.0
         )
-        if not found:
+        if not cidrs:
             return None
-        r = await get_redis()
-        used_key = "rdp_scanner:used_ips"
-        for ip in random.sample(found, min(len(found), 5)):
-            if not await r.sismember(used_key, ip):
-                await r.sadd(used_key, ip)
-                await r.expire(used_key, 30 * 24 * 3600)
+
+        open_ips = await asyncio.wait_for(
+            scan_port(cidrs, port=3389, max_ips=max_ips, timeout=0.8),
+            timeout=7.0,
+        )
+        if not open_ips:
+            logger.debug("rdp_scan_no_open_ports", country=country["code"])
+            return None
+
+        logger.info("rdp_scan_open_ports_found",
+                    country=country["code"], count=len(open_ips))
+
+        # Verify up to 15 candidates with full RDP handshake
+        random.shuffle(open_ips)
+        for ip in open_ips[:15]:
+            if await _verify_rdp_protocol(ip, timeout=2.5):
+                logger.info("rdp_verified_windows_server",
+                            ip=ip, country=country["code"])
                 return RDPResult(
-                    ip=ip, port=3389, username="Administrator",
+                    ip=ip,
+                    port=3389,
+                    username="Administrator",
                     password=generate_rdp_password(),
                     country_name=country["name"],
                     country_flag=country["flag"],
                     country_code=country["code"],
                 )
+
+        logger.debug("rdp_no_verified_rdp_in_candidates",
+                     country=country["code"], checked=min(len(open_ips), 15))
+        return None
+
+    except asyncio.TimeoutError:
+        logger.debug("rdp_country_scan_timeout", country=country["code"])
+        return None
     except Exception as e:
-        logger.debug("quick_rdp_scan_skipped", reason=str(e)[:80])
-    return None
+        logger.debug("rdp_country_scan_error",
+                     country=country["code"], reason=str(e)[:80])
+        return None
 
 
-async def scan_for_rdp(max_ips: int = 300) -> RDPResult:
+async def scan_for_rdp(max_ips: int = 400) -> Optional[RDPResult]:
     """
-    Always returns an RDPResult within ~12 seconds maximum.
-    Tries a quick real scan first; falls back to a generated result
-    when port scanning is blocked (e.g. Render free tier).
+    Scan multiple countries in parallel for real Windows RDP servers.
+    Only returns an RDPResult when a genuine Windows Remote Desktop server
+    is confirmed via X.224 handshake. Returns None otherwise — the caller
+    should skip posting when None is returned.
+
+    Deduplicates results: the same IP won't be returned twice within 30 days.
     """
-    result = await _quick_real_scan()
+    from app.cache.redis_client import get_redis
+
+    countries = random.sample(COUNTRIES, min(4, len(COUNTRIES)))
+    logger.info("rdp_scan_starting",
+                countries=[c["code"] for c in countries],
+                max_ips_per_country=max_ips)
+
+    tasks = [
+        asyncio.create_task(_scan_country(country, max_ips))
+        for country in countries
+    ]
+
+    result: Optional[RDPResult] = None
+    try:
+        for coro in asyncio.as_completed(tasks):
+            candidate = await coro
+            if candidate is None:
+                continue
+
+            # Deduplicate via Redis — skip IPs used in the last 30 days
+            try:
+                r = await get_redis()
+                used_key = "rdp_scanner:used_ips"
+                if await r.sismember(used_key, candidate["ip"]):
+                    logger.info("rdp_ip_already_posted_skipping",
+                                ip=candidate["ip"])
+                    continue
+                await r.sadd(used_key, candidate["ip"])
+                await r.expire(used_key, 30 * 24 * 3600)
+            except Exception as redis_err:
+                # Redis failure is non-fatal — still use the result
+                logger.warning("rdp_redis_dedup_failed", error=str(redis_err)[:60])
+
+            result = candidate
+            break
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        # Await cancellation quietly
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     if result:
-        logger.info("rdp_real_found", ip=result["ip"], country=result["country_name"])
-        return result
-    result = _fallback_result()
-    logger.info("rdp_fallback_used", ip=result["ip"], country=result["country_name"])
+        logger.info("rdp_scan_success",
+                    ip=result["ip"],
+                    country=result["country_name"])
+    else:
+        logger.info("rdp_scan_no_verified_result",
+                    hint="no real Windows RDP found — post will be skipped")
     return result
