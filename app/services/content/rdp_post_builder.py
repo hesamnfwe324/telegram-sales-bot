@@ -1,7 +1,8 @@
 """
-RDP Post Builder — 10 unique templates for free RDP/VPS/SERVER posts.
-Template is chosen by seed so consecutive posts never look the same.
-Images generated via Pollinations.ai (free, no API key required).
+RDP Post Builder — 10 unique, premium-quality templates for free RDP/VPS/SERVER posts.
+Template chosen by seed so consecutive posts never repeat.
+Images generated via Pollinations.ai — 3-URL fallback for maximum reliability.
+Admin signature is NOT added here; publisher.py handles it for all post types.
 """
 import random
 import urllib.parse
@@ -13,294 +14,529 @@ TEHRAN = ZoneInfo("Asia/Tehran")
 CHANNEL_TAG  = "@VPS24H"
 CHANNEL_LINK = "t.me/VPS24H"
 
-ADMIN_SIGNATURES = [
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑  Official Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✜  Verified Admin  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔱  Director & Admin  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🛡️  Head of Operations  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔐  Certified Admin  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💎  Senior Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🌍  Network Admin  ·  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡  Chief Admin  |  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀  Channel Lead  ›  @VPS24H",
-    "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🏆  Authorized Admin  ·  @VPS24H",
-]
-
+# ── Hashtag pools (8 varied sets) ─────────────────────────────────────────
 HASHTAG_POOLS = [
-    "#FreeRDP #FreeVPS #FreeServer #RDP #VPS #Windows #Server #FreeAccess #VPS24H",
-    "#RDPFree #VPSFree #ServerFree #WindowsServer #RemoteDesktop #CloudServer #FreeRDP",
-    "#FreeRDPServer #WindowsRDP #ServerAccess #FreeCloud #VPS24H #FreeVPS #RDP2025",
-    "#RemoteAccess #ServerGiveaway #FreeServer #RDP #VPS #Windows #FreeAccess #VPS24H",
-    "#FreeVPS2025 #FreeRDP2025 #WindowsServer #RemoteDesktop #ServerDrop #VPS24H",
+    "#FreeRDP #FreeVPS #ServerDrop #RemoteDesktop #VPS24H #FreeServer #Windows",
+    "#RDPDrop #VPSFree #FreeAccess #CloudServer #VPS24H #FreeRDP #WindowsServer",
+    "#ServerGiveaway #FreeVPS #RemoteAccess #RDPFree #VPS24H #FreeCloud #RDP",
+    "#FreeRDPServer #WindowsRDP #ServerAccess #VPS24H #FreeVPS #CloudRDP",
+    "#LiveRDP #FreeServer #VPSGiveaway #RDPAccess #VPS24H #FreeWindows",
+    "#CyberDrop #FreeRDP #ServerAlert #VPSFree #VPS24H #FreeAccess #RDP2026",
+    "#ServerDrop #FreeRDP #WindowsFree #VPS24H #RemoteServer #CloudFree",
+    "#FreePremiumRDP #VPSServer #CloudHosting #FreeAccess #VPS24H #RDPServer",
 ]
 
+# ── Image prompts (20 cinematic, high-quality prompts) ────────────────────
 RDP_IMAGE_PROMPTS = [
-    "Windows Remote Desktop connection professional interface data center server room blue white tech 8K ultra realistic",
-    "Futuristic VPS server room glowing blue racks network cables computing infrastructure dark dramatic cinematic lighting",
-    "Windows Server 2022 dashboard remote desktop connection screen cybersecurity digital technology professional",
-    "Premium cloud server datacenter rows servers orange glowing lights professional high-tech environment dramatic",
-    "Free RDP access concept computer monitor remote desktop unlock key digital freedom technology neon colors dark",
-    "Server room blinking LED lights ethernet cables modern datacenter infrastructure cinematic professional photography",
-    "Abstract digital server network RDP connection tunnel encrypted data transfer neon blue dark background",
-    "Windows Server system administrator multiple screens corporate tech environment professional clean workspace",
-    "Cloud computing infrastructure virtual private server floating servers icons blue technology futuristic background",
-    "Cyberpunk datacenter aesthetic neon-lit server racks futuristic computing ultra-detailed dark tech art",
-    "Professional remote desktop connection corporate server access secure login interface clean corporate design",
-    "High-performance VPS server stack multiple virtual machines cloud hosting concept modern technology art render",
-    "Digital fortress server security RDP protected connection lock over server rack cinematic dramatic lighting",
-    "Aerial view massive datacenter premium hosting infrastructure cloud servers professional wide angle photography",
-    "Free server giveaway concept gift box floating server icon cloud computing bright promotional design",
-]
-
-FALLBACK_STYLES = [
-    "ultra-realistic 8K professional photography, cinematic lighting, dark tech aesthetic",
-    "futuristic 3D render, glowing neon circuits, hyper-detailed, dark background, dramatic lighting",
-    "clean corporate illustration, vibrant gradient colors, modern professional design, sharp",
+    "futuristic dark server room neon blue glowing racks fog dramatic cinematic ultra HD 8K",
+    "dramatic datacenter interior rows glowing servers blue purple light photorealistic",
+    "cyberpunk hacker workstation dual monitors green matrix code dark neon aesthetic",
+    "abstract digital network visualization glowing data streams deep blue black 8K",
+    "premium cloud computing floating server cubes dark sky electric blue neon ultra realistic",
+    "Windows Remote Desktop ultrawide monitor professional office dark setup dramatic lighting",
+    "powerful server rack room red blue LED professional datacenter photography cinematic",
+    "binary code circuit board deep blue green neon lights 8K digital art",
+    "globe digital network connections glowing blue nodes dark background premium tech",
+    "aerial view massive datacenter complex night glowing orange blue lights dramatic cinematic",
+    "hacker typing keyboard multiple screens code dark room green amber light moody cinematic",
+    "VPN tunnel encrypted data stream neon blue particles dark tech background",
+    "RDP server access concept lock unlocking server room blue dramatic light cinematic",
+    "premium VPS hosting virtual machine containers floating dark tech 4K render",
+    "digital shield protecting server tower blue energy field cybersecurity concept art",
+    "deep space server farm orbital datacenter stars blue nebula ultra detailed 8K",
+    "fiber optic cables glowing orange blue close up macro dark datacenter background",
+    "minimalist server room perfect lighting floor reflection professional architecture photography",
+    "CPU chip glowing circuits neon blue purple macro ultra detailed dark background 8K",
+    "command center multiple screens server monitoring dark tech room cinematic lighting",
 ]
 
 _URL_SEPARATOR = "|||"
 
 
-def _pollinations_url(prompt: str, seed: int) -> str:
+def _pollinations_url(prompt: str, seed: int, width: int = 1280, height: int = 720) -> str:
     encoded = urllib.parse.quote(prompt)
     return (
         f"https://image.pollinations.ai/prompt/{encoded}"
-        f"?width=1280&height=720&model=flux&seed={seed}&nologo=true&enhance=true"
+        f"?width={width}&height={height}&model=flux&seed={seed}&nologo=true&enhance=true"
     )
 
 
 def generate_rdp_image_urls(seed: int) -> str:
-    """3 unique RDP-themed image URLs with different seeds and visual styles."""
-    base_prompt = RDP_IMAGE_PROMPTS[seed % len(RDP_IMAGE_PROMPTS)]
-    urls = []
-    for i, style in enumerate(FALLBACK_STYLES):
-        s = seed + (i * 7919) + (i * 31)
-        full_prompt = f"{base_prompt}, {style}"
-        urls.append(_pollinations_url(full_prompt, s))
-    return _URL_SEPARATOR.join(urls)
+    """Generate 3 fallback image URLs for maximum reliability."""
+    idx1 = seed % len(RDP_IMAGE_PROMPTS)
+    idx2 = (seed + 7) % len(RDP_IMAGE_PROMPTS)
+    idx3 = (seed + 13) % len(RDP_IMAGE_PROMPTS)
+    url1 = _pollinations_url(RDP_IMAGE_PROMPTS[idx1], seed)
+    url2 = _pollinations_url(RDP_IMAGE_PROMPTS[idx2], seed + 1)
+    url3 = _pollinations_url(RDP_IMAGE_PROMPTS[idx3], seed + 2, 1024, 576)
+    return f"{url1}{_URL_SEPARATOR}{url2}{_URL_SEPARATOR}{url3}"
 
 
-# ─── Template builders ────────────────────────────────────────────────────────
+def _now() -> str:
+    return datetime.now(TEHRAN).strftime("%d %b %Y  ·  %H:%M")
 
-def _t_gift(ip, port, username, password, country_name, country_flag) -> str:
+
+# ─────────────────────────────────────────────────────────────────────────
+# Template 1: SIGNAL
+# ─────────────────────────────────────────────────────────────────────────
+def _t_signal(ip, port, username, password, country_name, country_flag):
+    sep = "─" * 36
+    thick = "━" * 36
     return (
-        f"🎁 FREE SERVER JUST DROPPED — {country_flag} {country_name}\n\n"
-        f"Our scanner hunted this one down. It's yours. No strings attached.\n\n"
-        f"\u2554{chr(0x2550) * 30}\u2557\n"
-        f"\u2551   🖥️  FREE RDP ACCESS CARD   \u2551\n"
-        f"\u255a{chr(0x2550) * 30}\u255d\n\n"
-        f"🌍  Location    ›  {country_flag} {country_name}\n"
-        f"🔗  IP Address  ›  {ip}\n"
-        f"🔌  Port        ›  {port}\n"
-        f"👤  Username    ›  {username}\n"
-        f"🔑  Password    ›  {password}\n"
-        f"💻  Type        ›  Windows RDP\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ Scanned & verified. Port open. Ready to connect.\n"
-        f"⚠️  First come, first served. Don't sleep on this.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f4e1  SIGNAL INTERCEPTED — FREE SERVER
+"
+        f"{sep}
+
+"
+        f"U0001f534  Target acquired. Full Windows access.
+"
+        f"⚡  Connection live — act fast before it's gone.
+
+"
+        f"{thick}
+"
+        f"U0001f5a5  SERVER    {ip}:{port}
+"
+        f"U0001f464  USER      {username}
+"
+        f"U0001f511  PASS      {password}
+"
+        f"U0001f30d  REGION    {country_flag}  {country_name}
+"
+        f"⏱  CAPTURED  {_now()}
+"
+        f"{thick}
+
+"
+        f"U0001f4f2  HOW TO CONNECT
+"
+        f"  Windows  →  Win+R  →  mstsc  →  enter IP
+"
+        f"  Mac/iOS  →  Microsoft Remote Desktop app
+"
+        f"  Android  →  RD Client (Microsoft)
+
+"
+        f"U0001f381  100% Free · No sign-up · No catch
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_vip(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 2: THUNDER
+# ─────────────────────────────────────────────────────────────────────────
+def _t_thunder(ip, port, username, password, country_name, country_flag):
+    dbl = "═" * 36
     return (
-        f"💎 VIP SERVER UNLOCKED\n\n"
-        f"{country_flag} A premium {country_name} RDP just appeared on our radar.\n"
-        f"Grabbed it. Tested it. Giving it away. Free. No catch.\n\n"
-        f"{'▀' * 29}\n"
-        f"📌  SERVER CREDENTIALS\n"
-        f"{'▄' * 29}\n\n"
-        f"🌍  Country   →  {country_flag} {country_name}\n"
-        f"📡  Server    →  {ip}:{port}\n"
-        f"👤  User      →  {username}\n"
-        f"🔐  Pass      →  {password}\n"
-        f"🖥️   OS        →  Windows Server\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏆 Free VPS  •  Free RDP  •  Free Server\n"
-        f"⚡ Zero Cost. Full Access. Right Now.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"⚡  THUNDER DROP — LIVE FREE RDP
+"
+        f"{dbl}
+
+"
+        f"U0001f4a5  Scanner hit a live target.
+"
+        f"U0001f513  Full admin rights · Windows Server
+"
+        f"U0001f4cd  {country_flag}  {country_name}  ·  Port {port}
+
+"
+        f"  ┌───────────────────────────────────┐
+"
+        f"  │  U0001f310  {ip}:{port}
+"
+        f"  │  U0001f464  {username}
+"
+        f"  │  U0001f511  {password}
+"
+        f"  │  U0001f7e2  LIVE  ·  {_now()}
+"
+        f"  └───────────────────────────────────┘
+
+"
+        f"U0001f680  Connect: mstsc → paste IP → login
+"
+        f"✅  Works on PC · Mac · Android · iPhone
+
+"
+        f"U0001f4cc  Save this post · Share with friends!
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_secret(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 3: VAULT
+# ─────────────────────────────────────────────────────────────────────────
+def _t_vault(ip, port, username, password, country_name, country_flag):
+    sep = "─" * 40
+    thick = "━" * 40
     return (
-        f"🔓 SECRET SERVER FOUND: {country_flag} {country_name}\n\n"
-        f"Our scanners detected an exposed Windows server in {country_name}.\n"
-        f"Normally costs $20+/month. You're getting it FREE today.\n\n"
-        f"\u25c8{'━' * 28}\u25c8\n"
-        f"          🔑 ACCESS DETAILS\n"
-        f"\u25c8{'━' * 28}\u25c8\n\n"
-        f"   IP       :  {ip}\n"
-        f"   Port     :  {port}\n"
-        f"   User     :  {username}\n"
-        f"   Pass     :  {password}\n"
-        f"   Country  :  {country_flag} {country_name}\n"
-        f"   Type     :  Windows RDP Server\n\n"
-        f"\u25c8{'━' * 28}\u25c8\n"
-        f"💡 Use it for bots, projects, automation — anything.\n"
-        f"⏳ Limited window. Act fast.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f513  VAULT BREACHED — FREE ACCESS GRANTED
+"
+        f"{sep}
+
+"
+        f"U0001f3c6  Premium Windows Server
+"
+        f"U0001f48e  Worth $80–120/month — yours FREE right now
+"
+        f"U0001f4cd  {country_flag} {country_name}
+
+"
+        f"  U0001f310  IP      ›  {ip}
+"
+        f"  U0001f50c  PORT    ›  {port}
+"
+        f"  U0001f464  USER    ›  {username}
+"
+        f"  U0001f5dd  PASS    ›  {password}
+"
+        f"  ⏰  TIME    ›  {_now()}
+
+"
+        f"{thick}
+"
+        f"U0001f4f2  CONNECT IN 4 STEPS
+"
+        f"  ①  Open Remote Desktop (mstsc)
+"
+        f"  ②  Enter  {ip}:{port}
+"
+        f"  ③  Username: {username}
+"
+        f"  ④  Password: {password}  ✅
+"
+        f"{thick}
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_cyber(ip, port, username, password, country_name, country_flag) -> str:
-    now = datetime.now(TEHRAN).strftime("%Y-%m-%d %H:%M")
+# ─────────────────────────────────────────────────────────────────────────
+# Template 4: PHANTOM
+# ─────────────────────────────────────────────────────────────────────────
+def _t_phantom(ip, port, username, password, country_name, country_flag):
+    line = "─" * 38
     return (
-        f"⚡ CYBER DROP — FREE RDP SERVER\n\n"
-        f"[ {country_flag} {country_name} | Port {port} | LIVE ]\n\n"
-        f"Scanner locked on target. Full Windows access. Completely FREE.\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🖥️  [SERVER]  {ip}:{port}\n"
-        f"👤  [LOGIN]   {username}\n"
-        f"🔑  [PASS]    {password}\n"
-        f"🌍  [REGION]  {country_flag} {country_name}\n"
-        f"⏱️  [TIME]    {now}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🚀 Connect via Remote Desktop (mstsc) → Enter IP above\n"
-        f"💡 Works on Windows, Mac, Android, iOS\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f441  PHANTOM SERVER — ZERO-COST ENTRY
+"
+        f"{line}
+
+"
+        f"◈  Found in the wild · Sharing for free
+"
+        f"◈  {country_flag} {country_name}  ·  Port {port}  ·  Full Windows
+
+"
+        f"{line}
+"
+        f"  SERVER  →  {ip}:{port}
+"
+        f"  LOGIN   →  {username}
+"
+        f"  SECRET  →  {password}
+"
+        f"  STATUS  →  U0001f7e2 ONLINE  ·  {_now()}
+"
+        f"{line}
+
+"
+        f"U0001f576  No logs · No registration · No cost
+"
+        f"U0001f4d6  Save this · You will need it later
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_alert(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 5: NEXUS
+# ─────────────────────────────────────────────────────────────────────────
+def _t_nexus(ip, port, username, password, country_name, country_flag):
+    thick = "━" * 36
     return (
-        f"🚨 ALERT: FREE SERVER AVAILABLE — {country_flag} {country_name}\n\n"
-        f"Our scanner picked up an open RDP in {country_name}.\n"
-        f"Windows Server. Full access. No cost. Grab it now.\n\n"
-        f"\u256d{'─' * 29}\u256e\n"
-        f"\u2502  🔴 LIVE SERVER ALERT\n"
-        f"\u251c{'─' * 29}\u2524\n"
-        f"\u2502  Country   {country_flag} {country_name}\n"
-        f"\u2502  IP        {ip}\n"
-        f"\u2502  Port      {port}\n"
-        f"\u2502  Username  {username}\n"
-        f"\u2502  Password  {password}\n"
-        f"\u2502  Status    ✅ OPEN & READY\n"
-        f"\u2570{'─' * 29}\u256f\n\n"
-        f"⏳ These windows don't stay open long.\n"
-        f"🔥 Move fast. Connect. Enjoy.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f310  NEXUS NODE ONLINE — FREE RDP
+"
+        f"{thick}
+
+"
+        f"U0001f517  New node detected in our network grid
+"
+        f"U0001f4cd  {country_flag} {country_name}  ·  U0001f7e2 LIVE
+
+"
+        f"  ┌─ ACCESS CREDENTIALS ────────────────┐
+"
+        f"  │  HOST  {ip}:{port}
+"
+        f"  │  USER  {username}
+"
+        f"  │  PASS  {password}
+"
+        f"  │  OS    Windows Server — Full Admin
+"
+        f"  │  TIME  {_now()}
+"
+        f"  └───────────────────────────────────┘
+
+"
+        f"U0001f6e0  QUICK CONNECT
+"
+        f"  →  Windows: Run «mstsc» · Enter IP above
+"
+        f"  →  Mobile:  Microsoft RD Client app
+
+"
+        f"⭐  Like & save · More drops every day!
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_hacker(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 6: APEX
+# ─────────────────────────────────────────────────────────────────────────
+def _t_apex(ip, port, username, password, country_name, country_flag):
+    dbl = "═" * 38
+    thick = "━" * 38
     return (
-        f"💻 PORT SCANNER RESULT — FREE ACCESS INSIDE\n\n"
-        f"{country_flag} Location: {country_name}\n"
-        f"Method: Port Scanner | Port 3389 (RDP) | Result: OPEN\n\n"
-        f"> Initializing connection...\n"
-        f"> Credentials generated...\n"
-        f"> Access: GRANTED ✅\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"  🔗  IP       {ip}\n"
-        f"  🔌  PORT     {port}\n"
-        f"  👤  USER     {username}\n"
-        f"  🔑  PASS     {password}\n"
-        f"  🌍  COUNTRY  {country_flag} {country_name}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"System: Windows RDP  |  Cost: $0.00\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f3c6  APEX DROP — FREE PREMIUM SERVER
+"
+        f"{dbl}
+
+"
+        f"U0001f4b0  Market value: ~$80–120 / month
+"
+        f"✅  Your price today: ABSOLUTELY FREE
+"
+        f"U0001f4cd  {country_flag} {country_name}  ·  Full Admin Access
+
+"
+        f"{thick}
+"
+        f"  U0001f5a5  {ip}:{port}
+"
+        f"  U0001f510  {username}  /  {password}
+"
+        f"  U0001f550  {_now()}
+"
+        f"{thick}
+
+"
+        f"⚡  INSTANT ACCESS — 3 EASY STEPS
+"
+        f"  1️⃣  Open mstsc (Windows) or RD Client (mobile)
+"
+        f"  2️⃣  Type  {ip}:{port}
+"
+        f"  3️⃣  Enter username & password above  U0001f389
+
+"
+        f"U0001f514  Follow for daily free server drops!
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_luxury(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 7: NOVA
+# ─────────────────────────────────────────────────────────────────────────
+def _t_nova(ip, port, username, password, country_name, country_flag):
+    sep = "─" * 36
     return (
-        f"👑 PREMIUM SERVER — COMPLIMENTARY ACCESS\n\n"
-        f"Our network team sourced an exclusive {country_flag} {country_name} server\n"
-        f"for our valued community. Yours at zero cost.\n\n"
-        f"{'◆◇' * 10}◆\n"
-        f"   ✦  EXCLUSIVE SERVER DETAILS  ✦\n"
-        f"{'◆◇' * 10}◆\n\n"
-        f"   🌍  Origin      {country_flag} {country_name}\n"
-        f"   🔗  Host        {ip}\n"
-        f"   🔌  Port        {port}\n"
-        f"   👤  Identity    {username}\n"
-        f"   🔐  Passphrase  {password}\n"
-        f"   💻  Platform    Windows Server (RDP)\n\n"
-        f"{'◆◇' * 10}◆\n\n"
-        f"💎 Complimentary. Premium. Limited availability.\n"
-        f"🏆 Stay subscribed for daily server drops.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f4ab  NOVA SERVER LAUNCH — 100% FREE
+"
+        f"{sep}
+
+"
+        f"U0001f31f  Brand new · Fully clean · No tricks
+"
+        f"U0001f513  Windows Server · {country_flag} {country_name}
+
+"
+        f"  ╭─────────────────────────────────╮
+"
+        f"  │  U0001f310  {ip}:{port}
+"
+        f"  │  U0001f464  {username}
+"
+        f"  │  U0001f511  {password}
+"
+        f"  │  U0001f5fa  {country_flag} {country_name}
+"
+        f"  │  ⏰  {_now()}
+"
+        f"  ╰─────────────────────────────────╯
+
+"
+        f"U0001f4f1  Works on ALL devices
+"
+        f"  Windows · macOS · iOS · Android
+
+"
+        f"❤️  Forward to a friend · Subscribe for more!
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_speed(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 8: SHADOW
+# ─────────────────────────────────────────────────────────────────────────
+def _t_shadow(ip, port, username, password, country_name, country_flag):
+    bar = "▬" * 18
     return (
-        f"⚡ LIGHTNING FAST FREE RDP — {country_flag} {country_name}\n\n"
-        f"Scanner running at full speed. Found you a {country_name} RDP.\n"
-        f"Low latency. High uptime. Zero dollars.\n\n"
-        f"🔥{'─' * 27}🔥\n"
-        f"  SERVER   {ip}:{port}\n"
-        f"  LOGIN    {username}\n"
-        f"  PASS     {password}\n"
-        f"  COUNTRY  {country_flag} {country_name}\n"
-        f"  TYPE     Windows Remote Desktop\n"
-        f"🔥{'─' * 27}🔥\n\n"
-        f"How to connect:\n"
-        f"1️⃣  Open Remote Desktop (mstsc)\n"
-        f"2️⃣  Enter: {ip}:{port}\n"
-        f"3️⃣  Login with credentials above\n"
-        f"4️⃣  You're in. Free. Just like that. 🎉\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f311  SHADOW ACCESS — FREE WINDOWS SERVER
+"
+        f"{bar}
+
+"
+        f"U0001f575  Dropped by scanner · No cost · No catch
+"
+        f"⚡  {country_flag} {country_name}  ·  Port {port}  ·  LIVE NOW
+
+"
+        f"  ▌  SERVER  {ip}
+"
+        f"  ▌  PORT    {port}
+"
+        f"  ▌  USER    {username}
+"
+        f"  ▌  PASS    {password}
+"
+        f"  ▌  TIME    {_now()}
+"
+        f"  ▌  STATUS  U0001f7e2 ACTIVE
+
+"
+        f"{bar}
+
+"
+        f"U0001f517  Connect: mstsc → {ip}:{port}
+"
+        f"U0001f4a1  Use it for work, hosting, privacy — anything
+
+"
+        f"U0001f516  Bookmark this channel · Drops every day!
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_matrix(ip, port, username, password, country_name, country_flag) -> str:
+# ─────────────────────────────────────────────────────────────────────────
+# Template 9: TITAN
+# ─────────────────────────────────────────────────────────────────────────
+def _t_titan(ip, port, username, password, country_name, country_flag):
+    thick = "━" * 36
     return (
-        f"🟢 MATRIX BREACH — {country_flag} {country_name} SERVER\n\n"
-        f"The system has been entered. Port 3389 confirmed open.\n"
-        f"Credentials acquired. Transmitting to agents now.\n\n"
-        f"[[ TARGET ACQUIRED ]]\n"
-        f"════════════════════════════════\n"
-        f"  LOCATION  ::  {country_flag} {country_name}\n"
-        f"  ADDRESS   ::  {ip}\n"
-        f"  PORT      ::  {port}\n"
-        f"  OPERATOR  ::  {username}\n"
-        f"  KEY       ::  {password}\n"
-        f"  SYSTEM    ::  Windows RDP\n"
-        f"  STATUS    ::  🟢 LIVE\n"
-        f"════════════════════════════════\n"
-        f"[[ END TRANSMISSION ]]\n\n"
-        f"🚀 Enter the matrix. It's free.\n"
-        f"💡 Use wisely. Share the access.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f531  TITAN SERVER — ZERO COST DROP
+"
+        f"{thick}
+
+"
+        f"U0001f4aa  High-power Windows Server · Completely free
+"
+        f"U0001f30d  Location: {country_flag} {country_name}  ·  U0001f7e2 LIVE & VERIFIED
+
+"
+        f"  ┌───────────────────────────────────┐
+"
+        f"  │  HOST  {ip}:{port}
+"
+        f"  │  USER  {username}
+"
+        f"  │  PASS  {password}
+"
+        f"  │  TIME  {_now()}
+"
+        f"  └───────────────────────────────────┘
+
+"
+        f"⚙️  STEP-BY-STEP GUIDE
+"
+        f"  →  Press Win+R  →  type mstsc  →  hit Enter
+"
+        f"  →  Computer:  {ip}:{port}
+"
+        f"  →  Username:  {username}
+"
+        f"  →  Password:  {password}
+
+"
+        f"U0001f680  No registration. No payment. Ever.
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
-def _t_scanner_report(ip, port, username, password, country_name, country_flag) -> str:
-    now = datetime.now(TEHRAN).strftime("%d %b %Y | %H:%M")
+# ─────────────────────────────────────────────────────────────────────────
+# Template 10: MATRIX
+# ─────────────────────────────────────────────────────────────────────────
+def _t_matrix(ip, port, username, password, country_name, country_flag):
+    shade = "░" * 18
     return (
-        f"📊 SCANNER REPORT — {country_flag} {country_name}\n\n"
-        f"Date: {now}\n"
-        f"Scan Type: RDP Port 3389 | {country_name} IP Range\n"
-        f"Result: ✅ Open Port Detected\n\n"
-        f"\u250c{'─' * 30}\u2510\n"
-        f"\u2502  🌍 SERVER DETAILS\n"
-        f"\u2502  IP       {ip}\n"
-        f"\u2502  Port     {port}\n"
-        f"\u2502  User     {username}\n"
-        f"\u2502  Pass     {password}\n"
-        f"\u2502  OS       Windows Server\n"
-        f"\u2502  Country  {country_flag} {country_name}\n"
-        f"\u2502  Status   🟢 LIVE & FREE\n"
-        f"\u2514{'─' * 30}\u2518\n\n"
-        f"🎁 Completely free. No registration required.\n"
-        f"📌 Save this post. Use it anytime.\n\n"
-        f"📣 {CHANNEL_TAG}  •  {CHANNEL_LINK}"
+        f"U0001f4bb  MATRIX ENTRY — FREE SERVER ACCESS
+"
+        f"{shade}
+
+"
+        f"[ SYSTEM BREACH DETECTED ]
+"
+        f"[ TARGET: {country_flag} {country_name}  ·  PORT {port} ]
+"
+        f"[ STATUS: U0001f7e2 ONLINE  ·  ACCESS GRANTED ]
+
+"
+        f"  ▶  IP       {ip}
+"
+        f"  ▶  PORT     {port}
+"
+        f"  ▶  USER     {username}
+"
+        f"  ▶  PASS     {password}
+"
+        f"  ▶  TIME     {_now()}
+"
+        f"  ▶  OS       Windows Server · Full Admin
+
+"
+        f"{shade}
+
+"
+        f"⌨️  COMMAND: mstsc → {ip}:{port}
+"
+        f"U0001f4f1  MOBILE:  Microsoft RD Client app
+
+"
+        f"U0001f4be  Save this · Share this · Use it
+
+"
+        f"U0001f4e3  {CHANNEL_TAG}  ·  {CHANNEL_LINK}"
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────
 _TEMPLATES = [
-    _t_gift,
-    _t_vip,
-    _t_secret,
-    _t_cyber,
-    _t_alert,
-    _t_hacker,
-    _t_luxury,
-    _t_speed,
+    _t_signal,
+    _t_thunder,
+    _t_vault,
+    _t_phantom,
+    _t_nexus,
+    _t_apex,
+    _t_nova,
+    _t_shadow,
+    _t_titan,
     _t_matrix,
-    _t_scanner_report,
 ]
 
 
@@ -314,14 +550,16 @@ def build_rdp_post(
     seed: int,
 ) -> tuple[str, str]:
     """
-    Build an attractive RDP post text and image URLs.
-    Template chosen by seed so consecutive posts never look the same.
+    Build an attractive RDP post text and 3 fallback image URLs.
+    Template chosen by seed — consecutive posts never look the same.
     Returns (post_text, image_urls_string).
+
+    NOTE: Admin signature is NOT included here.
+    publisher.py adds it consistently for all post types — no double-signing.
     """
     template_fn = _TEMPLATES[seed % len(_TEMPLATES)]
     body = template_fn(ip, port, username, password, country_name, country_flag)
     hashtags = random.choice(HASHTAG_POOLS)
-    admin_sig = ADMIN_SIGNATURES[seed % len(ADMIN_SIGNATURES)]
-    post_text = f"{body}\n\n{hashtags}{admin_sig}"
+    post_text = f"{body}\n\n{hashtags}"
     image_urls = generate_rdp_image_urls(seed)
     return post_text, image_urls
