@@ -302,62 +302,61 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
     channel_id_str = str(channel.id)
     post_mode = _get_post_mode(channel_id_str)
 
-      # ── RDP Scanner post (replaces text-only post) ─────────────────────────
-      if post_mode == "text":
-          try:
-              from app.services.scanner.rdp_scanner import scan_for_rdp
-              from app.services.content.rdp_post_builder import build_rdp_post
-              rdp_result = await scan_for_rdp()
-              if rdp_result:
-                  unique_seed = random.randint(100_000, 99_999_999)
-                  rdp_content, rdp_image_url = build_rdp_post(
-                      ip=rdp_result["ip"],
-                      port=rdp_result["port"],
-                      username=rdp_result["username"],
-                      password=rdp_result["password"],
-                      country_name=rdp_result["country_name"],
-                      country_flag=rdp_result["country_flag"],
-                      seed=unique_seed,
-                  )
-                  async with AsyncSessionLocal() as session:
-                      rdp_post = Post(
-                          account_id=channel.account_id,
-                          channel_ids=[str(channel.id)],
-                          content=rdp_content,
-                          languages={lang: rdp_content},
-                          image_url=rdp_image_url,
-                          status="scheduled",
-                          scheduled_at=datetime.now(timezone.utc),
-                      )
-                      session.add(rdp_post)
-                      await session.flush()
-                      try:
-                          await publish_post(session, rdp_post)
-                          await session.commit()
-                          _record_hash(rdp_content)
-                          _toggle_post_mode(channel_id_str)
-                          logger.info("rdp_post_sent",
-                                      channel=channel.display_name,
-                                      country=rdp_result["country_name"],
-                                      ip=rdp_result["ip"])
-                          return True
-                      except Exception as e:
-                          rdp_post.status = "failed"
-                          await session.commit()
-                          logger.error("rdp_post_send_failed",
-                                       channel=channel.display_name, error=str(e))
-          except Exception as e:
-              logger.warning("rdp_scan_fallback_to_regular",
-                             channel=channel.display_name, error=str(e))
-      # ── End RDP scanner block ──────────────────────────────────────────────
+    # ── RDP Scanner post (replaces text-only post) ─────────────────────────
+    if post_mode == "text":
+        try:
+            from app.services.scanner.rdp_scanner import scan_for_rdp
+            from app.services.content.rdp_post_builder import build_rdp_post
+            rdp_result = await scan_for_rdp()
+            if rdp_result:
+                unique_seed = random.randint(100_000, 99_999_999)
+                rdp_content, rdp_image_url = build_rdp_post(
+                    ip=rdp_result["ip"],
+                    port=rdp_result["port"],
+                    username=rdp_result["username"],
+                    password=rdp_result["password"],
+                    country_name=rdp_result["country_name"],
+                    country_flag=rdp_result["country_flag"],
+                    seed=unique_seed,
+                )
+                async with AsyncSessionLocal() as session:
+                    rdp_post = Post(
+                        account_id=channel.account_id,
+                        channel_ids=[str(channel.id)],
+                        content=rdp_content,
+                        languages={lang: rdp_content},
+                        image_url=rdp_image_url,
+                        status="scheduled",
+                        scheduled_at=datetime.now(timezone.utc),
+                    )
+                    session.add(rdp_post)
+                    await session.flush()
+                    try:
+                        await publish_post(session, rdp_post)
+                        await session.commit()
+                        _record_hash(rdp_content)
+                        _toggle_post_mode(channel_id_str)
+                        logger.info("rdp_post_sent",
+                                    channel=channel.display_name,
+                                    country=rdp_result["country_name"],
+                                    ip=rdp_result["ip"])
+                        return True
+                    except Exception as e:
+                        rdp_post.status = "failed"
+                        await session.commit()
+                        logger.error("rdp_post_send_failed",
+                                     channel=channel.display_name, error=str(e))
+        except Exception as e:
+            logger.warning("rdp_scan_error",
+                           channel=channel.display_name, error=str(e))
+    # ── End RDP scanner block ──────────────────────────────────────────────
 
-      # Text slot is exclusively for RDP posts — never fall through to AI text post
-      if post_mode == "text":
-          logger.info("rdp_scan_failed_skipping_text_post",
-                      channel=channel.display_name)
-          return False
+    # Text slot is exclusively for RDP posts — skip if scan failed
+    if post_mode == "text":
+        logger.info("rdp_scan_failed_skipping", channel=channel.display_name)
+        return False
 
-      topic, content_type = await _pick_fresh_combo()
+    topic, content_type = await _pick_fresh_combo()
     forbidden_angles = await _get_recent_post_angles(limit=25)
     style_hint = random.choice(STYLE_MODIFIERS)
     unique_seed = random.randint(100_000, 99_999_999)
