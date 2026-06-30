@@ -204,7 +204,7 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         )
         return
 
-    # ── Step 2: Build post and send ─────────────────────────────────────────
+    # ── Step 2: Build the post content ──────────────────────────────────────
     try:
         from app.services.content.rdp_post_builder import build_rdp_post
         seed = random.randint(100_000, 99_999_999)
@@ -235,71 +235,77 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
             parse_mode="Markdown",
         )
 
-        # ── Step 3: Send to all active channels ──────────────────────────────
-        from app.db.session import AsyncSessionLocal
-        from app.models.channel import TelegramChannel
-        from app.models.post import Post
-        from app.services.channel.publisher import publish_post
-        from sqlalchemy import select
-        from datetime import datetime, timezone
-
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(TelegramChannel).where(TelegramChannel.is_active == True)
+        # ── Step 3: Find a connected userbot client ───────────────────────────
+        accounts = _userbot_manager.list_accounts()
+        connected_accounts = [a for a in accounts if a["is_connected"]]
+        if not connected_accounts:
+            await status_msg.edit_text(
+                "❌ *هیچ یوزربات متصلی وجود ندارد.*\n\n"
+                "لطفاً ابتدا UserBot را Start کنید.",
+                parse_mode="Markdown",
+                reply_markup=back_kb(),
             )
-            channels = result.scalars().all()
+            return
+        client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
-            if not channels:
-                await status_msg.edit_text(
-                    "❌ هیچ کانال فعالی وجود ندارد.",
-                    reply_markup=back_kb(),
-                )
-                return
-
-            account_id = channels[0].account_id
-            channel_ids = [str(ch.id) for ch in channels]
-
-            post = Post(
-                account_id=account_id,
-                channel_ids=channel_ids,
-                content=rdp_content,
-                languages={"en": rdp_content},
-                image_url=rdp_image_urls,
-                status="scheduled",
-                scheduled_at=datetime.now(timezone.utc),
+        # ── Step 4: Get active channels ───────────────────────────────────────
+        from app.services.channel.auto_poster import _get_active_channels
+        channels = await _get_active_channels()
+        if not channels:
+            await status_msg.edit_text(
+                "❌ هیچ کانال فعالی وجود ندارد.",
+                reply_markup=back_kb(),
             )
-            session.add(post)
-            await session.flush()
+            return
 
+        # ── Step 5: Download image (with short timeout, fall back to text) ────
+        from app.services.channel.publisher import _parse_image_urls, _download_with_fallbacks, _build_post_text
+        image_bytes = None
+        if rdp_image_urls:
             try:
-                await publish_post(session, post)
-                await session.commit()
-                logger.info(
-                    "admin_rdp_post_sent",
-                    channels=len(channels),
-                    ip=ip,
-                    country=country_name,
+                urls = _parse_image_urls(rdp_image_urls)
+                image_bytes = await asyncio.wait_for(
+                    _download_with_fallbacks(urls), timeout=20.0
                 )
-            except Exception as pub_err:
-                post.status = "failed"
-                await session.commit()
-                logger.error("admin_rdp_post_send_failed", error=str(pub_err))
-                await status_msg.edit_text(
-                    f"❌ *خطا در ارسال به کانال‌ها:*\n`{str(pub_err)[:300]}`",
-                    parse_mode="Markdown",
-                    reply_markup=back_kb(),
-                )
-                return
+            except (asyncio.TimeoutError, Exception) as img_err:
+                logger.warning("rdp_image_download_failed", error=str(img_err)[:80])
+                image_bytes = None
 
-        await status_msg.edit_text(
-            f"✅ *پست سرور رایگان ارسال شد!*\n\n"
+        # ── Step 6: Send to each channel ──────────────────────────────────────
+        import io
+        success = 0
+        failed = 0
+        failed_reasons = []
+        for ch in channels:
+            try:
+                caption = _build_post_text(rdp_content, ch.username, 1024)
+                if image_bytes:
+                    file_obj = io.BytesIO(image_bytes)
+                    file_obj.name = "rdp.jpg"
+                    await client.send_file(ch.telegram_channel_id, file_obj, caption=caption, parse_mode="md")
+                else:
+                    await client.send_message(ch.telegram_channel_id, rdp_content, parse_mode="md")
+                success += 1
+                logger.info("rdp_sent_to_channel", channel=ch.telegram_channel_id)
+                await asyncio.sleep(2)
+            except Exception as ch_err:
+                failed += 1
+                failed_reasons.append(f"{ch.telegram_channel_id}: {str(ch_err)[:60]}")
+                logger.error("rdp_channel_send_failed", channel=ch.telegram_channel_id, error=str(ch_err))
+
+        has_img = "✅" if image_bytes else "❌ (text only)"
+        result_text = (
+            f"{'✅' if success > 0 else '⚠️'} *پست سرور رایگان {'ارسال شد' if success > 0 else 'ارسال نشد'}!*\n\n"
             f"🌍 کشور: {country_flag} {country_name}\n"
             f"🔗 IP: `{ip}`\n"
-            f"📡 کانال‌ها: `{len(channels)}` کانال\n"
-            "🖼 با تصویر: ✅",
-            parse_mode="Markdown",
-            reply_markup=back_kb(),
+            f"📡 موفق: `{success}` / `{len(channels)}` کانال\n"
+            f"🖼 تصویر: {has_img}"
         )
+        if failed_reasons:
+            result_text += f"\n\n❌ خطاها:\n" + "\n".join(f"`{r}`" for r in failed_reasons[:3])
+
+        await status_msg.edit_text(result_text, parse_mode="Markdown", reply_markup=back_kb())
+        logger.info("admin_rdp_post_done", success=success, failed=failed, ip=ip, country=country_name)
 
     except Exception as outer_err:
         logger.error("ctrl_rdp_post_now_unhandled", error=str(outer_err))
