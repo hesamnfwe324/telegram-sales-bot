@@ -78,6 +78,13 @@ def _is_quota_error(exc: Exception) -> bool:
     ))
 
 
+def _is_retryable(exc: Exception) -> bool:
+    """Only retry transient network/server errors. Never retry quota/auth errors."""
+    if _is_quota_error(exc):
+        return False
+    return True
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -91,6 +98,7 @@ async def generate_reply(
     max_tokens: int = None,
     tools: List[dict] = None,
 ) -> tuple[str, int]:
+    # Check quota cooldown FIRST — bail immediately, no retries
     if _is_quota_exhausted():
         raise RuntimeError("AI quota cooldown active — skipping")
 
@@ -118,7 +126,10 @@ async def generate_reply(
         return content, tokens
     except Exception as e:
         if _is_quota_error(e):
+            # Mark quota exhausted and re-raise immediately — tenacity will NOT
+            # retry because we raise a non-retryable RuntimeError below.
             _mark_quota_exhausted()
+            raise RuntimeError(f"AI quota/auth error — cooldown started: {e}") from e
         logger.error("ai_generation_failed", error=str(e))
         raise
 
