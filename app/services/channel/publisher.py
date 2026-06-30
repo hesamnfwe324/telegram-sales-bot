@@ -108,6 +108,9 @@ def _build_post_text(
     channel_username: str | None,
     max_length: int,
 ) -> str:
+    # RDP posts already contain a complete footer (@VPS24H) — don't duplicate it
+    if "@VPS24H" in content:
+        return content[:max_length]
     body, hashtags = _split_body_and_hashtags(content)
     channel_tag = _get_channel_tag(channel_username) if channel_username else ""
     admin_sig = _get_admin_signature()
