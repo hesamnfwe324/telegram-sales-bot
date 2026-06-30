@@ -456,7 +456,7 @@ async def run_auto_poster(userbot_manager):
 
             for channel in channels:
                 ch_key = str(channel.id)
-                last = _last_post_time.get(ch_key, 0)
+                last = _last_post_time.get(ch_key, -MIN_INTERVAL_SECONDS)
 
                 if now_ts - last < MIN_INTERVAL_SECONDS:
                     remaining = int((MIN_INTERVAL_SECONDS - (now_ts - last)) / 60)
