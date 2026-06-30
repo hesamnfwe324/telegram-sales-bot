@@ -303,6 +303,12 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
     post_mode = _get_post_mode(channel_id_str)
 
     # ── RDP Scanner post (text slot) ───────────────────────────────────────
+    # Skip RDP posts for channels that opted out via metadata
+    if post_mode == "text" and channel.metadata_ and channel.metadata_.get("rdp_enabled") is False:
+        _toggle_post_mode(channel_id_str)
+        post_mode = "media"
+        logger.info("rdp_skipped_channel_opt_out", channel=channel.display_name)
+
     if post_mode == "text":
         rdp_posted = False
         try:

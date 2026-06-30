@@ -251,7 +251,7 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
         # ── Step 4: Get active channels ───────────────────────────────────────
-        from app.services.channel.auto_poster import _get_active_channels
+        from app.services.channel.auto_poster import _get_active_channels, _last_post_time
         channels = await _get_active_channels()
         if not channels:
             await status_msg.edit_text(
@@ -279,6 +279,10 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         failed = 0
         failed_reasons = []
         for ch in channels:
+            # Skip channels that explicitly opted out of RDP posts
+            if ch.metadata_ and ch.metadata_.get("rdp_enabled") is False:
+                logger.info("rdp_channel_skipped_opt_out", channel=ch.telegram_channel_id)
+                continue
             try:
                 caption = _build_post_text(rdp_content, ch.username, 1024)
                 if image_bytes:
@@ -288,6 +292,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
                 else:
                     await client.send_message(ch.telegram_channel_id, rdp_content, parse_mode="md")
                 success += 1
+                # Update cooldown so auto_poster waits full interval before posting again
+                _last_post_time[str(ch.id)] = asyncio.get_event_loop().time()
                 logger.info("rdp_sent_to_channel", channel=ch.telegram_channel_id)
                 await asyncio.sleep(2)
             except Exception as ch_err:
