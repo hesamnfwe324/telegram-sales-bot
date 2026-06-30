@@ -1,12 +1,44 @@
-from openai import AsyncOpenAI
+"""
+AI engine — wraps Groq (primary) and OpenAI (fallback).
+When Groq quota is exhausted, sets a cooldown flag so auto_poster
+pauses gracefully without crashing the process or the userbot.
+"""
+from openai import AsyncOpenAI, RateLimitError, AuthenticationError
 from app.core.config import settings
 from app.core.logging import get_logger
 from typing import Optional, List, AsyncIterator
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import asyncio
+import time
 
 logger = get_logger(__name__)
+
 _client: Optional[AsyncOpenAI] = None
+
+# ── Groq quota cooldown ──────────────────────────────────────────────────────
+# When quota is exhausted we pause AI calls for QUOTA_COOLDOWN seconds
+# so auto_poster backs off gracefully — online_keeper_loop is unaffected.
+QUOTA_COOLDOWN = 3600  # 1 hour
+_quota_exhausted_until: float = 0.0
+
+
+def _is_quota_exhausted() -> bool:
+    return time.monotonic() < _quota_exhausted_until
+
+
+def _mark_quota_exhausted() -> None:
+    global _quota_exhausted_until
+    _quota_exhausted_until = time.monotonic() + QUOTA_COOLDOWN
+    logger.warning(
+        "ai_quota_exhausted_cooling_down",
+        cooldown_seconds=QUOTA_COOLDOWN,
+        provider="groq" if settings.GROQ_API_KEY else "openai",
+    )
+
+
+def is_ai_available() -> bool:
+    """Returns False when quota is in cooldown — callers should skip AI work."""
+    return not _is_quota_exhausted()
 
 
 def get_ai_client() -> AsyncOpenAI:
@@ -34,6 +66,18 @@ def get_model() -> str:
     return settings.GROQ_MODEL if settings.GROQ_API_KEY else settings.OPENAI_MODEL
 
 
+def _is_quota_error(exc: Exception) -> bool:
+    """True for errors that mean the key is exhausted / invalid — no point retrying."""
+    if isinstance(exc, (RateLimitError, AuthenticationError)):
+        return True
+    msg = str(exc).lower()
+    return any(k in msg for k in (
+        "quota", "exceeded", "insufficient_quota",
+        "rate limit", "rate_limit", "429",
+        "invalid api key", "unauthorized", "401",
+    ))
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -47,6 +91,9 @@ async def generate_reply(
     max_tokens: int = None,
     tools: List[dict] = None,
 ) -> tuple[str, int]:
+    if _is_quota_exhausted():
+        raise RuntimeError("AI quota cooldown active — skipping")
+
     client = get_ai_client()
     temperature = temperature if temperature is not None else settings.OPENAI_TEMPERATURE
     max_tokens = max_tokens or settings.OPENAI_MAX_TOKENS
@@ -70,31 +117,47 @@ async def generate_reply(
         logger.info("ai_reply_generated", tokens=tokens, model=get_model())
         return content, tokens
     except Exception as e:
+        if _is_quota_error(e):
+            _mark_quota_exhausted()
         logger.error("ai_generation_failed", error=str(e))
         raise
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def generate_content(prompt: str, system: str = "", temperature: float = 0.8) -> str:
+    """
+    Single-call AI content generation.
+    Raises RuntimeError immediately when quota is exhausted (no retries).
+    Callers should check is_ai_available() before calling if they want to skip silently.
+    """
+    if _is_quota_exhausted():
+        raise RuntimeError("AI quota cooldown active — skipping content generation")
+
     client = get_ai_client()
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    response = await client.chat.completions.create(
-        model=get_model(),
-        messages=messages,
-        temperature=temperature,
-        max_tokens=2000,
-    )
-    return response.choices[0].message.content or ""
+    try:
+        response = await client.chat.completions.create(
+            model=get_model(),
+            messages=messages,
+            temperature=temperature,
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        if _is_quota_error(e):
+            _mark_quota_exhausted()
+        raise
 
 
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=5))
 async def generate_embedding(text: str) -> List[float]:
     if settings.GROQ_API_KEY and not settings.OPENAI_API_KEY:
         logger.warning("embeddings_not_supported_on_groq_returning_empty")
+        return []
+    if _is_quota_exhausted():
         return []
     client = get_ai_client()
     text = text.replace("\n", " ")[:8000]
@@ -105,6 +168,8 @@ async def generate_embedding(text: str) -> List[float]:
         )
         return response.data[0].embedding
     except Exception as e:
+        if _is_quota_error(e):
+            _mark_quota_exhausted()
         logger.error("embedding_generation_failed", error=str(e))
         return []
 
@@ -115,6 +180,8 @@ async def generate_reply_streaming(
     temperature: float = None,
     max_tokens: int = None,
 ) -> AsyncIterator[str]:
+    if _is_quota_exhausted():
+        raise RuntimeError("AI quota cooldown active")
     client = get_ai_client()
     temperature = temperature if temperature is not None else settings.OPENAI_TEMPERATURE
     max_tokens = max_tokens or settings.OPENAI_MAX_TOKENS
@@ -134,11 +201,15 @@ async def generate_reply_streaming(
             if delta:
                 yield delta
     except Exception as e:
+        if _is_quota_error(e):
+            _mark_quota_exhausted()
         logger.error("ai_streaming_failed", error=str(e))
         raise
 
 
 async def extract_facts_from_conversation(messages: List[dict], language: str = "en") -> dict:
+    if _is_quota_exhausted():
+        return {}
     system = """Extract key facts about the customer from this conversation.
 Return ONLY valid JSON with these keys:
 - budget_min: number or null
@@ -170,6 +241,8 @@ Return ONLY valid JSON with these keys:
 
 
 async def check_ai_health() -> bool:
+    if _is_quota_exhausted():
+        return False
     try:
         client = get_ai_client()
         await client.chat.completions.create(
@@ -179,5 +252,7 @@ async def check_ai_health() -> bool:
         )
         return True
     except Exception as e:
+        if _is_quota_error(e):
+            _mark_quota_exhausted()
         logger.error("ai_health_check_failed", error=str(e))
         return False
