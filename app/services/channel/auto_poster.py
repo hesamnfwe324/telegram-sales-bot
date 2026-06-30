@@ -308,7 +308,7 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
         try:
             from app.services.scanner.rdp_scanner import scan_for_rdp
             from app.services.content.rdp_post_builder import build_rdp_post
-            rdp_result = await scan_for_rdp()
+            rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=15.0)
             if rdp_result:
                 unique_seed = random.randint(100_000, 99_999_999)
                 rdp_content, rdp_image_url = build_rdp_post(
