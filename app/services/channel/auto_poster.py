@@ -351,6 +351,12 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
                              channel=channel.display_name, error=str(e))
       # ── End RDP scanner block ──────────────────────────────────────────────
 
+      # Text slot is exclusively for RDP posts — never fall through to AI text post
+      if post_mode == "text":
+          logger.info("rdp_scan_failed_skipping_text_post",
+                      channel=channel.display_name)
+          return False
+
       topic, content_type = await _pick_fresh_combo()
     forbidden_angles = await _get_recent_post_angles(limit=25)
     style_hint = random.choice(STYLE_MODIFIERS)
