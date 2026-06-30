@@ -16,7 +16,10 @@ logger = get_logger(__name__)
 
 HEALTH_CHECK_INTERVAL = 60
 MAX_RECONNECT_FAILURES = 3
-ONLINE_PING_INTERVAL = 240  # seconds — ping every 4 min to stay online
+
+# Ping every 3 min — Telegram marks a client offline after ~5 min of silence.
+# 3 min gives a comfortable safety margin regardless of AI key status.
+ONLINE_PING_INTERVAL = 180
 
 
 class UserBotManager:
@@ -99,19 +102,26 @@ class UserBotManager:
         """
         Keeps every connected account appearing Online 24/7.
         Sends UpdateStatusRequest(offline=False) every ONLINE_PING_INTERVAL seconds.
-        Telegram marks a client offline after ~5 min of silence, so 4-min pings
-        are enough to stay permanently visible as online.
+
+        This loop is completely independent of the AI key — it runs even when
+        the AI quota is exhausted, rate-limited, or the key is invalid.
+        The loop restarts itself automatically after any unexpected error.
         """
         logger.info("online_keeper_started", interval_sec=ONLINE_PING_INTERVAL)
         while self._running:
-            for account_id, client in list(self._clients.items()):
-                if client.is_connected:
-                    try:
-                        await client.client(UpdateStatusRequest(offline=False))
-                        logger.debug("online_ping_sent", account_id=account_id)
-                    except Exception as e:
-                        logger.warning("online_ping_failed", account_id=account_id, error=str(e))
+            try:
+                for account_id, client in list(self._clients.items()):
+                    if client.is_connected:
+                        try:
+                            await client.client(UpdateStatusRequest(offline=False))
+                            logger.debug("online_ping_sent", account_id=account_id)
+                        except Exception as e:
+                            logger.warning("online_ping_failed", account_id=account_id, error=str(e))
+            except Exception as e:
+                # Catch-all so the loop NEVER exits due to an unexpected error
+                logger.error("online_keeper_loop_error_recovering", error=str(e))
             await asyncio.sleep(ONLINE_PING_INTERVAL)
+        logger.info("online_keeper_stopped")
 
     async def health_check_loop(self) -> None:
         while self._running:
