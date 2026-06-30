@@ -180,7 +180,7 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
     try:
         from app.services.scanner.rdp_scanner import scan_for_rdp
         try:
-            rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=50.0)
+            rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=15.0)
         except asyncio.TimeoutError:
             rdp_result = None
             logger.warning("admin_rdp_scan_timeout")
