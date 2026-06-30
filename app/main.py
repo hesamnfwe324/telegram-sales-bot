@@ -45,31 +45,45 @@ _auto_poster_task: asyncio.Task | None = None
 _bg_init_task: asyncio.Task | None = None
 _keep_alive_task: asyncio.Task | None = None
 
-KEEP_ALIVE_INTERVAL = 600  # 10 minutes — prevents Render free tier spin-down
+# Reduced to 5 min — Render free tier sleeps after 15 min of inactivity.
+# Keeping it at 5 min gives a 3x safety margin.
+KEEP_ALIVE_INTERVAL = 300
 
 
 async def _keep_alive_loop() -> None:
     """
-    Pings own health endpoint every 10 min so Render never spins down.
+    Pings own health endpoint every 5 min so Render never spins down.
     Render free tier shuts the process after 15 min of no incoming requests.
     Without this, the userbot disconnects and the account appears offline.
+
+    FIX: Previously exited immediately when RENDER_EXTERNAL_URL was not set,
+    leaving Render free to sleep the service. Now falls back to a local
+    self-ping via the PORT env var so the loop always runs.
     """
     import httpx
-    # Render sets RENDER_EXTERNAL_URL automatically for web services
-    base_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
-    if not base_url:
-        logger.info("keep_alive_disabled", reason="RENDER_EXTERNAL_URL not set")
-        return
-    ping_url = f"{base_url}/api/healthz"
-    logger.info("keep_alive_started", url=ping_url, interval_sec=KEEP_ALIVE_INTERVAL)
     await asyncio.sleep(30)  # wait for server to fully start first
+
+    # Build candidate URLs in priority order
+    ping_urls: list[str] = []
+    external = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if external:
+        ping_urls.append(f"{external}/api/healthz")
+
+    port = os.environ.get("PORT", "10000")
+    ping_urls.append(f"http://localhost:{port}/api/healthz")
+    ping_urls.append(f"http://0.0.0.0:{port}/api/healthz")
+
+    logger.info("keep_alive_started", urls=ping_urls, interval_sec=KEEP_ALIVE_INTERVAL)
+
     while True:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get(ping_url)
-                logger.info("keep_alive_ping", status=r.status_code)
-        except Exception as e:
-            logger.warning("keep_alive_ping_failed", error=str(e))
+        for url in ping_urls:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    r = await client.get(url)
+                    logger.info("keep_alive_ping", url=url, status=r.status_code)
+                break  # success — no need to try next URL
+            except Exception as e:
+                logger.warning("keep_alive_ping_failed", url=url, error=str(e))
         await asyncio.sleep(KEEP_ALIVE_INTERVAL)
 
 
