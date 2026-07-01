@@ -14,6 +14,7 @@ Image generation (Pollinations.ai / Flux — free, no API key):
 import asyncio
 import hashlib
 import random
+import time as _time
 import uuid
 import urllib.parse
 from collections import deque
@@ -190,6 +191,36 @@ def _generate_image_urls(topic: str, base_seed: int) -> str:
         full_prompt = f"{base_prompt}, {style}"
         urls.append(_build_pollinations_url(full_prompt, seed))
     return _URL_SEPARATOR.join(urls)
+
+
+COOLDOWN_SECONDS = MIN_INTERVAL_SECONDS  # 3 hours
+
+
+def _cooldown_key(channel_id: str) -> str:
+    return f"autoposter:cooldown:{channel_id}"
+
+
+async def get_cooldown_remaining(channel_id: str) -> int:
+    """Return seconds remaining in cooldown, or 0 if channel is ready to post."""
+    from app.cache.redis_client import cache_get
+    val = await cache_get(_cooldown_key(channel_id))
+    if not val:
+        return 0
+    try:
+        posted_at = float(val)
+        elapsed = _time.time() - posted_at
+        remaining = int(COOLDOWN_SECONDS - elapsed)
+        return max(0, remaining)
+    except Exception:
+        return 0
+
+
+async def mark_channel_posted(channel_id: str) -> None:
+    """Mark a channel as just posted — blocks both manual and auto posting for 3 hours."""
+    from app.cache.redis_client import cache_set
+    now_ts = _time.time()
+    await cache_set(_cooldown_key(channel_id), str(now_ts), ttl=COOLDOWN_SECONDS + 300)
+    _last_post_time[channel_id] = asyncio.get_running_loop().time()
 
 
 _channel_post_mode: dict[str, str] = {}
@@ -446,22 +477,21 @@ async def run_auto_poster(userbot_manager):
                 await asyncio.sleep(300)
                 continue
 
-            now_ts = asyncio.get_running_loop().time()
             posted = 0
 
             for channel in channels:
                 ch_key = str(channel.id)
-                last = _last_post_time.get(ch_key, -MIN_INTERVAL_SECONDS)
+                cooldown = await get_cooldown_remaining(ch_key)
 
-                if now_ts - last < MIN_INTERVAL_SECONDS:
-                    remaining = int((MIN_INTERVAL_SECONDS - (now_ts - last)) / 60)
+                if cooldown > 0:
+                    remaining_min = cooldown // 60
                     logger.info("auto_poster_channel_cooldown",
-                                channel=channel.display_name, remaining_minutes=remaining)
+                                channel=channel.display_name, remaining_minutes=remaining_min)
                     continue
 
                 success = await _post_to_channel(userbot_manager, channel)
                 if success:
-                    _last_post_time[ch_key] = asyncio.get_running_loop().time()
+                    await mark_channel_posted(ch_key)
                     posted += 1
                     await asyncio.sleep(random.randint(10, 30))
 
