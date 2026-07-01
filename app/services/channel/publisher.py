@@ -1,8 +1,10 @@
 import io
+import os
 import random
 import hashlib
 import asyncio
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +15,10 @@ from app.services.monitoring.metrics_collector import increment_daily_stat
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# publisher.py lives at app/services/channel/publisher.py → 3 parents up = repo root
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_FILE_MARKER = "FILE:"
 
 _userbot_manager = None
 
@@ -84,6 +90,18 @@ def _parse_image_urls(image_url: str) -> list[str]:
     if not image_url:
         return []
     return [u.strip() for u in image_url.split(_URL_SEPARATOR) if u.strip()]
+
+
+def _read_local_file(rel_path: str) -> bytes | None:
+    """Read a file from disk relative to the repo root. Returns None on any error."""
+    try:
+        full_path = _REPO_ROOT / rel_path
+        data = full_path.read_bytes()
+        logger.info("local_file_read", path=str(full_path), size_kb=len(data) // 1024)
+        return data
+    except Exception as e:
+        logger.warning("local_file_read_failed", path=rel_path, error=str(e))
+        return None
 
 
 def _truncate_body(text: str, limit: int) -> str:
@@ -212,12 +230,21 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
             media_sent = False
 
             if post.image_url:
-                image_urls = _parse_image_urls(post.image_url)
-                media_bytes = await _download_with_fallbacks(image_urls)
+                # Local file (brand banner) — read from disk, no download needed
+                if post.image_url.startswith(_FILE_MARKER):
+                    rel_path = post.image_url[len(_FILE_MARKER):]
+                    media_bytes = _read_local_file(rel_path)
+                else:
+                    image_urls = _parse_image_urls(post.image_url)
+                    media_bytes = await _download_with_fallbacks(image_urls)
 
                 if media_bytes:
                     caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
-                    is_video = _is_video_url(image_urls[0])
+                    # FILE: paths are always images (jpg), never videos
+                    is_video = (
+                        False if post.image_url.startswith(_FILE_MARKER)
+                        else _is_video_url(image_urls[0])
+                    )
                     file_obj = io.BytesIO(media_bytes)
 
                     if is_video:
