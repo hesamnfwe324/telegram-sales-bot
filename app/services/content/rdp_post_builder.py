@@ -53,6 +53,26 @@ def _generate_image_urls(seed: int) -> str:
     return _URL_SEPARATOR.join(urls)
 
 
+_DROP_LINES = [
+    "\U0001f4a5 Free Windows Server just dropped \u2014 grab it now",
+    "\U0001f525 Premium server unlocked \u2014 100% free, no tricks",
+    "\U0001f381 Free RDP just dropped \u2014 yours for the taking",
+    "\u26a1 Live free server alert \u2014 limited time, act fast",
+    "\U0001f4e2 Exclusive drop \u2014 free Windows Server online now",
+    "\U0001f30d Free server found \u2014 sharing with the community",
+    "\U0001f48e Premium RDP access \u2014 dropped for free today",
+    "\U0001f680 Hot drop \u2014 free Windows Server just went live",
+    "\U0001f4bb Free server unlocked \u2014 connect before it\u2019s gone",
+    "\u2b50 Server giveaway \u2014 full admin access, totally free",
+    "\U0001f4e1 Live server drop \u2014 free access for everyone",
+    "\U0001f3c6 Big drop \u2014 free RDP server online right now",
+]
+
+
+def _drop_line(seed: int) -> str:
+    return _DROP_LINES[seed % len(_DROP_LINES)]
+
+
 def _now_parts() -> tuple[str, str]:
     now = datetime.now(TEHRAN)
     return now.strftime("%d %b %Y"), now.strftime("%H:%M")
@@ -81,7 +101,7 @@ def build_rdp_post(
         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
         "\u2550\u2550\u2550\u2550\u2550\u2550\n\n"
-        "\U0001f4a5 Scanner hit a LIVE target \u2014 sharing for free\n"
+        f"{_drop_line(seed)}\n"
         "\U0001f513 Full admin rights \u00b7 Windows Server\n"
         f"\U0001f4cd {country_flag} {country_name} \u00b7 Port {port}\n\n"
         "  \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
