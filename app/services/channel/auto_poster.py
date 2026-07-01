@@ -16,7 +16,6 @@ import hashlib
 import random
 import time as _time
 import uuid
-import urllib.parse
 from collections import deque
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -27,7 +26,7 @@ from app.models.channel import TelegramChannel
 from app.models.post import Post
 from app.services.content.generator import generate_post
 from app.services.content.templates import get_all_content_types
-from app.services.channel.publisher import publish_post, _URL_SEPARATOR
+from app.services.channel.publisher import publish_post
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -158,39 +157,9 @@ _IMAGE_PROMPTS = [
     "VDS infrastructure diagram, dedicated virtual nodes, network topology, glowing connections, dark futuristic 3D art",
 ]
 
-_IMAGE_STYLES = [
-    "ultra-realistic 8K professional photography, cinematic lighting, dark tech aesthetic",
-    "futuristic 3D render, glowing neon blue circuits, hyper-detailed, dark background, dramatic",
-    "photorealistic datacenter photography, professional HDR, dramatic shadows and highlights",
-]
-
-
-def _get_base_prompt(topic: str) -> str:
-    idx = abs(hash(topic)) % len(_IMAGE_PROMPTS)
-    return _IMAGE_PROMPTS[idx]
-
-
-def _build_pollinations_url(prompt: str, seed: int) -> str:
-    encoded = urllib.parse.quote(prompt)
-    return (
-        f"https://image.pollinations.ai/prompt/{encoded}"
-        f"?width=1280&height=720&model=flux&seed={seed}&nologo=true&enhance=true"
-    )
-
-
-def _generate_image_urls(topic: str, base_seed: int) -> str:
-    """
-    Generate 3 AI image URLs — all RDP/VPS/Server/VDS themed.
-    Packed into one string separated by _URL_SEPARATOR.
-    Publisher tries them in order — first successful download wins.
-    """
-    base_prompt = _get_base_prompt(topic)
-    urls = []
-    for i, style in enumerate(_IMAGE_STYLES):
-        seed = base_seed + (i * 7919)
-        full_prompt = f"{base_prompt}, {style}"
-        urls.append(_build_pollinations_url(full_prompt, seed))
-    return _URL_SEPARATOR.join(urls)
+# Static brand image used for ALL posts (auto + manual, media mode).
+# No AI, no external service, no API key — always available.
+_BRAND_IMAGE = "FILE:app/assets/rdp_banner.jpg"
 
 
 COOLDOWN_SECONDS = MIN_INTERVAL_SECONDS  # 3 hours
@@ -418,8 +387,8 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
 
     image_url: str | None = None
     if post_mode == "media":
-        image_url = _generate_image_urls(topic, unique_seed)
-        logger.info("image_urls_generated", topic=topic, base_seed=unique_seed)
+        image_url = _BRAND_IMAGE
+        logger.info("brand_image_selected", mode="static_file")
 
     async with AsyncSessionLocal() as session:
         post = Post(
