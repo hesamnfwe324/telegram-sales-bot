@@ -17,9 +17,9 @@ logger = get_logger(__name__)
 HEALTH_CHECK_INTERVAL = 60
 MAX_RECONNECT_FAILURES = 3
 
-# Ping every 3 min — Telegram marks a client offline after ~5 min of silence.
-# 3 min gives a comfortable safety margin regardless of AI key status.
-ONLINE_PING_INTERVAL = 180
+# Ping every 60 seconds — well under Telegram's ~5 min offline threshold.
+# Never depends on AI keys, posting state, or any external service.
+ONLINE_PING_INTERVAL = 60
 
 
 class UserBotManager:
@@ -39,6 +39,14 @@ class UserBotManager:
 
         logger.info("accounts_loaded", count=len(accounts))
 
+    async def _ping_online(self, account_id: str, client: UserBotClient) -> None:
+        """Send a single online ping — fire and forget, never raises."""
+        try:
+            await client.client(UpdateStatusRequest(offline=False))
+            logger.debug("online_ping_sent", account_id=account_id)
+        except Exception as e:
+            logger.warning("online_ping_failed", account_id=account_id, error=str(e))
+
     async def add_account(self, account_id: str, phone: str, session_string: str = None) -> bool:
         client = UserBotClient(phone=phone, session_string=session_string, account_id=account_id)
         connected = await client.connect()
@@ -48,6 +56,8 @@ class UserBotManager:
             self._clients[account_id] = client
             self._reconnect_failures[account_id] = 0
             await self._update_account_status(account_id, connected=True)
+            # Immediately mark online — don't wait for the first loop tick
+            await self._ping_online(account_id, client)
             logger.info("account_added", account_id=account_id, phone=phone)
             return True
         else:
@@ -101,27 +111,22 @@ class UserBotManager:
     async def online_keeper_loop(self) -> None:
         """
         Keeps every connected account appearing Online 24/7.
-        Sends UpdateStatusRequest(offline=False) every ONLINE_PING_INTERVAL seconds.
 
-        This loop is completely independent of the AI key — it runs even when
-        the AI quota is exhausted, rate-limited, or the key is invalid.
-        The loop restarts itself automatically after any unexpected error.
+        - Pings UpdateStatusRequest(offline=False) every 60 seconds.
+        - Completely independent of AI keys, posting state, or any external service.
+        - Never sends offline=True — Telegram only goes offline if it stops receiving pings.
+        - Restarts itself automatically after any unexpected error (catch-all).
+        - Runs forever as long as the process is alive.
         """
         logger.info("online_keeper_started", interval_sec=ONLINE_PING_INTERVAL)
-        while self._running:
+        while True:
             try:
                 for account_id, client in list(self._clients.items()):
                     if client.is_connected:
-                        try:
-                            await client.client(UpdateStatusRequest(offline=False))
-                            logger.debug("online_ping_sent", account_id=account_id)
-                        except Exception as e:
-                            logger.warning("online_ping_failed", account_id=account_id, error=str(e))
+                        await self._ping_online(account_id, client)
             except Exception as e:
-                # Catch-all so the loop NEVER exits due to an unexpected error
                 logger.error("online_keeper_loop_error_recovering", error=str(e))
             await asyncio.sleep(ONLINE_PING_INTERVAL)
-        logger.info("online_keeper_stopped")
 
     async def health_check_loop(self) -> None:
         while self._running:
@@ -140,6 +145,8 @@ class UserBotManager:
                     if reconnected:
                         self._register_handlers(client, account_id)
                         self._reconnect_failures[account_id] = 0
+                        # Immediately go online after reconnect — don't wait for loop tick
+                        await self._ping_online(account_id, client)
                         await send_alert("info", "telegram", f"Account {client.phone} reconnected ✅", cooldown=False)
                     else:
                         self._reconnect_failures[account_id] = failures + 1
@@ -148,19 +155,21 @@ class UserBotManager:
         self._running = True
         await self.load_accounts()
         asyncio.create_task(self.health_check_loop())
+        # online_keeper_loop runs forever — independent of _running flag
         asyncio.create_task(self.online_keeper_loop())
         logger.info("userbot_manager_started", accounts=len(self._clients))
 
     async def stop(self) -> None:
         self._running = False
+        # NOTE: We deliberately do NOT send UpdateStatusRequest(offline=True).
+        # Sending offline=True would immediately make the profile appear offline.
+        # Instead, we let Telegram time out the presence naturally — by the time
+        # it does (~5 min), the new server instance is already pinging online again.
         for client in self._clients.values():
-            # Mark offline cleanly before disconnect
             try:
-                if client.is_connected:
-                    await client.client(UpdateStatusRequest(offline=True))
+                await client.disconnect()
             except Exception:
                 pass
-            await client.disconnect()
         self._clients.clear()
         self._reconnect_failures.clear()
         logger.info("userbot_manager_stopped")
