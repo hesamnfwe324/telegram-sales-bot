@@ -139,50 +139,34 @@ STYLE_MODIFIERS = [
     "Use a minimalist style — fewer words, more impact per sentence.",
 ]
 
-_TOPIC_IMAGE_PROMPTS = {
-    "docker": "Docker containers visualization, microservices architecture, interconnected nodes, technology",
-    "kubernetes": "Kubernetes orchestration diagram, pod clusters, cloud-native technology, abstract",
-    "ssh": "secure shell terminal, green text on black screen, encryption visualization, cybersecurity",
-    "security": "cybersecurity shield, digital lock, firewall protection, network security visualization",
-    "firewall": "network firewall packet filtering, secure gateway, digital protection concept",
-    "ssl": "SSL certificate HTTPS padlock, secure connection, encryption data flow, green lock",
-    "nginx": "Nginx web server reverse proxy, load balancing, high-traffic architecture diagram",
-    "vpn": "VPN tunnel visualization, encrypted connection, privacy shield, global network map",
-    "backup": "data backup system, cloud storage disaster recovery, digital archive, safe storage",
-    "monitoring": "server monitoring dashboard, real-time metrics, uptime graphs, alert notification",
-    "linux": "Linux terminal command line, Tux penguin logo, code on dark screen, open source",
-    "ubuntu": "Ubuntu Linux server terminal, orange purple branding, open source datacenter",
-    "windows": "Windows Server interface, datacenter racks, cloud infrastructure, blue theme",
-    "rdp": "Remote Desktop connection, Windows remote access, screen sharing technology",
-    "cloud": "cloud computing infrastructure, floating servers, scalable architecture, sky data",
-    "vps": "Virtual Private Server visualization, virtualization layers, isolated containers, rack",
-    "database": "database server SQL tables, structured data storage, PostgreSQL visualization",
-    "python": "Python programming snake logo, automation scripts, code on dark background",
-    "telegram": "Telegram bot automation, messaging API, blue chat interface, code integration",
-    "crypto": "cryptocurrency node server, blockchain network, mining rig, digital ledger nodes",
-    "game": "game server infrastructure, low-latency network, gaming datacenter, performance",
-    "wordpress": "WordPress hosting CMS dashboard, PHP server, web publishing platform",
-    "network": "global network infrastructure, fiber optic cables, internet exchange point",
-    "latency": "low latency network, speed visualization, fiber optic data transfer, fast",
-    "free": "free VPS server gift concept, promotional offer, cloud hosting open access",
-    "speed": "server performance speed, NVMe SSD, ultra-fast data processing visualization",
-    "cost": "cost savings hosting, budget optimization, money and technology, ROI concept",
-    "default": "premium VPS cloud server infrastructure, professional datacenter, advanced technology",
-}
+_IMAGE_PROMPTS = [
+    "Windows Remote Desktop connection screen, RDP login interface, blue professional theme, server credentials panel, ultra HD photorealistic",
+    "RDP remote desktop session active, Windows Server taskbar, multiple monitor setup, dark IT workspace, cinematic lighting",
+    "Windows Server 2022 datacenter edition interface, administrator dashboard, server manager open, dark dramatic lighting",
+    "Remote desktop protocol visualization, encrypted connection tunnel, Windows server access, glowing blue neon, cyberpunk tech art",
+    "Virtual Private Server VPS hosting panel, resource usage graphs, CPU RAM disk stats, dark dashboard UI, professional",
+    "VPS cloud server infrastructure, floating virtual machine containers, isolated nodes glowing blue, dark background, 3D render",
+    "VPS server farm visualization, rows of virtual machines, cloud hosting platform, neon blue purple lighting, cinematic",
+    "Premium VPS hosting environment, server control panel dashboard, uptime metrics, dark sleek UI, ultra HD",
+    "Dedicated server rack hardware, blade servers glowing LEDs, enterprise datacenter room, dramatic dark lighting, photorealistic 8K",
+    "Server room interior, rows of rack servers, blinking status lights, blue orange neon glow, cinematic wide angle",
+    "Professional datacenter servers, ceiling-mounted cooling, cable management, dramatic lighting, ultra realistic photography",
+    "Enterprise server hardware closeup, CPU heatsinks RAM sticks, glowing circuits, dark tech aesthetic, macro 8K",
+    "Virtual Dedicated Server VDS cloud platform, virtual machine isolation, dedicated resources visualization, dark background neon",
+    "VDS server management dashboard, dedicated virtual instance, resource allocation panel, sleek dark UI, professional",
+    "VDS infrastructure diagram, dedicated virtual nodes, network topology, glowing connections, dark futuristic 3D art",
+]
 
-_FALLBACK_STYLES = [
+_IMAGE_STYLES = [
     "ultra-realistic 8K professional photography, cinematic lighting, dark tech aesthetic",
-    "futuristic 3D render, glowing neon circuits, hyper-detailed, dark background, dramatic",
-    "clean corporate illustration, vibrant gradient colors, modern professional design",
+    "futuristic 3D render, glowing neon blue circuits, hyper-detailed, dark background, dramatic",
+    "photorealistic datacenter photography, professional HDR, dramatic shadows and highlights",
 ]
 
 
 def _get_base_prompt(topic: str) -> str:
-    topic_lower = topic.lower()
-    for keyword, prompt in _TOPIC_IMAGE_PROMPTS.items():
-        if keyword in topic_lower:
-            return prompt
-    return _TOPIC_IMAGE_PROMPTS["default"]
+    idx = abs(hash(topic)) % len(_IMAGE_PROMPTS)
+    return _IMAGE_PROMPTS[idx]
 
 
 def _build_pollinations_url(prompt: str, seed: int) -> str:
@@ -195,13 +179,13 @@ def _build_pollinations_url(prompt: str, seed: int) -> str:
 
 def _generate_image_urls(topic: str, base_seed: int) -> str:
     """
-    Generate 3 AI image URLs with different seeds and visual styles.
+    Generate 3 AI image URLs — all RDP/VPS/Server/VDS themed.
     Packed into one string separated by _URL_SEPARATOR.
     Publisher tries them in order — first successful download wins.
     """
     base_prompt = _get_base_prompt(topic)
     urls = []
-    for i, style in enumerate(_FALLBACK_STYLES):
+    for i, style in enumerate(_IMAGE_STYLES):
         seed = base_seed + (i * 7919)
         full_prompt = f"{base_prompt}, {style}"
         urls.append(_build_pollinations_url(full_prompt, seed))
