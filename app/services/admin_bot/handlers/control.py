@@ -250,8 +250,11 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
             return
         client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
-        # ── Step 4: Get active channels ───────────────────────────────────────
-        from app.services.channel.auto_poster import _get_active_channels, _last_post_time
+        # ── Step 4: Get active channels + cooldown check ──────────────────────
+        from app.services.channel.auto_poster import (
+            _get_active_channels, _last_post_time,
+            get_cooldown_remaining, mark_channel_posted, _toggle_post_mode,
+        )
         channels = await _get_active_channels()
         if not channels:
             await status_msg.edit_text(
@@ -259,6 +262,21 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
                 reply_markup=back_kb(),
             )
             return
+
+        # Block manual post if still in 3-hour cooldown
+        if channels:
+            cooldown = await get_cooldown_remaining(str(channels[0].id))
+            if cooldown > 0:
+                h = cooldown // 3600
+                m = (cooldown % 3600) // 60
+                await status_msg.edit_text(
+                    f"⏳ *هنوز باید صبر کنید!*\n\n"
+                    f"آخرین پست کمتر از ۳ ساعت پیش ارسال شد.\n"
+                    f"⏱ تا پست بعدی: *{h}h {m:02d}m* دیگر",
+                    parse_mode="Markdown",
+                    reply_markup=back_kb(),
+                )
+                return
 
         # ── Step 5: Download image (with short timeout, fall back to text) ────
         from app.services.channel.publisher import _parse_image_urls, _download_with_fallbacks, _build_post_text
@@ -292,8 +310,9 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
                 else:
                     await client.send_message(ch.telegram_channel_id, rdp_content, parse_mode="md")
                 success += 1
-                # Update cooldown so auto_poster waits full interval before posting again
-                _last_post_time[str(ch.id)] = asyncio.get_event_loop().time()
+                # Mark 3-hour cooldown in Redis + toggle next post mode to media
+                await mark_channel_posted(str(ch.id))
+                _toggle_post_mode(str(ch.id))
                 logger.info("rdp_sent_to_channel", channel=ch.telegram_channel_id)
                 await asyncio.sleep(2)
             except Exception as ch_err:
