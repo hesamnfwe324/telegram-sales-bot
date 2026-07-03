@@ -28,8 +28,12 @@ class UserBotClient:
             app_version="1.0.0",
             lang_code="en",
             system_lang_code="en",
-            # Limit retries so startup does not hang
-            connection_retries=1,
+            # Startup itself is still bounded by the caller's own timeout
+            # (see _timed(..., "userbot", 30.0) in main.py), but the live
+            # connection must reconnect forever — otherwise a single
+            # transient network blip leaves the account looking offline
+            # until the slow external health-check loop notices and fixes it.
+            connection_retries=None,
             retry_delay=1,
             timeout=10,
             request_retries=1,
