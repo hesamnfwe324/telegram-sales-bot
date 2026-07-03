@@ -38,12 +38,12 @@ def _now_parts() -> tuple[str, str]:
     return now.strftime("%d %b %Y"), now.strftime("%H:%M")
 
 
-def _channel_tag(username: str | None) -> str:
-    """Return @username or t.me/username link if username is set."""
+def _channel_link(username: str | None) -> str:
+    """Return markdown [channel](t.me/username) link if username is set."""
     if not username:
         return "this channel"
     u = username.lstrip("@")
-    return f"@{u} \u00b7 t.me/{u}"
+    return f"[channel](t.me/{u})"
 
 
 def build_rdp_post(
@@ -63,7 +63,7 @@ def build_rdp_post(
     Returns (post_text, image_urls_string).
     """
     date_str, time_str = _now_parts()
-    channel_tag = _channel_tag(channel_username)
+    channel_link = _channel_link(channel_username)
 
     text = (
         "\u26a1\u26a1 THUNDER DROP \u2014 LIVE FREE RDP \u26a1\u26a1\n"
@@ -91,7 +91,7 @@ def build_rdp_post(
         "    the password to get changed over time.\n"
         "\u23f3  Can\u2019t connect? A fresh server posts here\n"
         "    in \u223c3 hours \u2014 stay tuned.\n"
-        f"\U0001f514  Follow {channel_tag} \u00b7 Be first in line.\n"
+        f"\U0001f514  Follow this {channel_link} \u00b7 Be first in line.\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
