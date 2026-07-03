@@ -38,6 +38,14 @@ def _now_parts() -> tuple[str, str]:
     return now.strftime("%d %b %Y"), now.strftime("%H:%M")
 
 
+def _channel_tag(username: str | None) -> str:
+    """Return @username or t.me/username link if username is set."""
+    if not username:
+        return "this channel"
+    u = username.lstrip("@")
+    return f"@{u} \u00b7 t.me/{u}"
+
+
 def build_rdp_post(
     ip: str,
     port: int,
@@ -46,6 +54,7 @@ def build_rdp_post(
     country_name: str,
     country_flag: str,
     seed: int,
+    channel_username: str | None = None,
 ) -> tuple[str, str]:
     """
     Build the THUNDER DROP RDP post.
@@ -54,6 +63,7 @@ def build_rdp_post(
     Returns (post_text, image_urls_string).
     """
     date_str, time_str = _now_parts()
+    channel_tag = _channel_tag(channel_username)
 
     text = (
         "\u26a1\u26a1 THUNDER DROP \u2014 LIVE FREE RDP \u26a1\u26a1\n"
@@ -77,11 +87,11 @@ def build_rdp_post(
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
         "\u2500\u2500\u2518\n\n"
         "\U0001f4cb \u2500\u2500\u2500\u2500\u2500\u2500  N O T E  \u2500\u2500\u2500\u2500\u2500\u2500 \U0001f4cb\n"
-        "\u26a0\ufe0f  This server\u2019s password rotates automatically\n"
-        "    as user capacity fills \u2014 by design.\n"
-        "\u23f3  Unable to connect? The next server drops\n"
-        "    in exactly \u223c\u202f3 hours on this channel.\n"
-        "\U0001f514  Stay subscribed \u00b7 Get every drop first.\n"
+        "\u26a0\ufe0f  Heavy user traffic on this server causes\n"
+        "    the password to get changed over time.\n"
+        "\u23f3  Can\u2019t connect? A fresh server posts here\n"
+        "    in \u223c3 hours \u2014 stay tuned.\n"
+        f"\U0001f514  Follow {channel_tag} \u00b7 Be first in line.\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
