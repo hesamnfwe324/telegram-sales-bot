@@ -54,6 +54,13 @@ async def mark_channel_posted(channel_id: str) -> None:
 
 _recent_hashes: deque = deque(maxlen=300)
 _last_post_time: dict[str, float] = {}
+_post_mode: dict[str, str] = {}
+
+
+def _toggle_post_mode(channel_id: str) -> None:
+    """Toggle next post mode between 'text' and 'media' for a channel."""
+    current = _post_mode.get(channel_id, "text")
+    _post_mode[channel_id] = "media" if current == "text" else "text"
 
 
 def _content_hash(text: str) -> str:
