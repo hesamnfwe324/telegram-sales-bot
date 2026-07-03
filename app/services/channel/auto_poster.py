@@ -102,6 +102,7 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
         country_name=rdp_result["country_name"],
         country_flag=rdp_result["country_flag"],
         seed=unique_seed,
+        channel_username=channel.username,
     )
 
     if _is_duplicate(rdp_content):
