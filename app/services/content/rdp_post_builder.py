@@ -3,6 +3,7 @@ RDP Post Builder — single fixed template (THUNDER DROP).
 Username is always hardcoded as Administrator.
 Image is always the UPGRADE TEAM brand banner (app/assets/rdp_banner.jpg).
 """
+import random as _random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -28,14 +29,60 @@ _DROP_LINES = [
     "\U0001f3c6 Big drop \u2014 free RDP server online right now",
 ]
 
+_CHANNEL_TAG_FORMATS = [
+    "\U0001f517  @{u}  \u00b7  Tap to Follow",
+    "\U0001f4e2  @{u}  \u2014  Join Our Channel",
+    "\U0001f4e1  @{u}  |  Official Channel",
+    "\U0001f514  @{u}  \u00b7  Subscribe Now",
+    "\U0001f4ac  @{u}  \u2014  Our Channel",
+    "\U0001f310  @{u}  |  Follow Us",
+    "\u2b50  @{u}  \u00b7  Stay Updated",
+    "\U0001f4a1  @{u}  \u2014  Main Channel",
+    "\U0001f4e3  @{u}  |  Official Feed",
+    "\U0001f6e1  @{u}  \u00b7  Verified Channel",
+    "\U0001f48e  @{u}  \u2014  Premium Channel",
+    "\U0001f3c6  @{u}  |  Top Channel",
+]
+
+_ADMIN_SIGNATURES = [
+    "\U0001f451  Official Admin  |  @VPS24H",
+    "\U0001f451  Channel Admin  \u203a  @VPS24H",
+    "\u26dc\ufe0f  Verified Admin  \u00b7  @VPS24H",
+    "\U0001f531  Director & Admin  \u203a  @VPS24H",
+    "\U0001f4a0  Channel Manager  |  @VPS24H",
+    "\U0001f6e1\ufe0f  Head of Operations  \u203a  @VPS24H",
+    "\U0001f3c6  Authorized Admin  \u00b7  @VPS24H",
+    "\U0001f4e1  Admin & Publisher  |  @VPS24H",
+    "\U0001f510  Certified Admin  \u203a  @VPS24H",
+    "\u2699\ufe0f  System Admin  |  @VPS24H",
+    "\U0001f30d  Network Admin  \u00b7  @VPS24H",
+    "\U0001f680  Channel Lead  \u203a  @VPS24H",
+    "\U0001f4ce  Senior Admin  |  @VPS24H",
+    "\U0001f3af  Operations Lead  \u00b7  @VPS24H",
+    "\U0001f52e  Channel Director  \u203a  @VPS24H",
+    "\u26a1  Chief Admin  |  @VPS24H",
+    "\U0001f31f  Verified Publisher  \u00b7  @VPS24H",
+    "\U0001f3c5  Admin Authority  \u203a  @VPS24H",
+    "\U0001f6f0\ufe0f  Broadcast Admin  |  @VPS24H",
+    "\U0001f4bc  Executive Admin  \u00b7  @VPS24H",
+]
+
 
 def _drop_line(seed: int) -> str:
     return _DROP_LINES[seed % len(_DROP_LINES)]
 
 
-def _now_parts() -> tuple[str, str]:
-    now = datetime.now(TEHRAN)
-    return now.strftime("%d %b %Y"), now.strftime("%H:%M")
+def _channel_tag(username: str | None, seed: int) -> str:
+    """Return a rotating channel tag line for the given username."""
+    if not username:
+        return ""
+    u = username.lstrip("@")
+    fmt = _CHANNEL_TAG_FORMATS[seed % len(_CHANNEL_TAG_FORMATS)]
+    return fmt.format(u=u)
+
+
+def _admin_sig(seed: int) -> str:
+    return _ADMIN_SIGNATURES[(seed + 7) % len(_ADMIN_SIGNATURES)]
 
 
 def _channel_link(username: str | None) -> str:
@@ -44,6 +91,11 @@ def _channel_link(username: str | None) -> str:
         return "this channel"
     u = username.lstrip("@")
     return f"[channel](t.me/{u})"
+
+
+def _now_parts() -> tuple[str, str]:
+    now = datetime.now(TEHRAN)
+    return now.strftime("%d %b %Y"), now.strftime("%H:%M")
 
 
 def build_rdp_post(
@@ -64,6 +116,8 @@ def build_rdp_post(
     """
     date_str, time_str = _now_parts()
     channel_link = _channel_link(channel_username)
+    tag_line = _channel_tag(channel_username, seed)
+    admin_line = _admin_sig(seed)
 
     text = (
         "\u26a1\u26a1 THUNDER DROP \u2014 LIVE FREE RDP \u26a1\u26a1\n"
@@ -99,11 +153,11 @@ def build_rdp_post(
         "\u2705 Works on PC \u00b7 Mac \u00b7 Android \u00b7 iPhone\n\n"
         "\U0001f4cc Save this post \u00b7 Share with friends!\n\n"
         "#ServerDrop #FreeRDP #WindowsFree #RemoteServer #CloudFree\n\n"
-        "\U0001f517  @Seller_rdp  \u00b7  Tap to Follow\n\n"
+        f"{tag_line}\n\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
         "\u2501\u2501\u2501\n"
-        "\U0001f451  Official Admin  |  @VPS24H"
+        f"{admin_line}"
     )
 
     return text, RDP_BANNER_IMAGE
