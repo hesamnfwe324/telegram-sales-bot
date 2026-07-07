@@ -148,7 +148,7 @@ def build_rdp_post(
         f"\U0001f514  Follow this {channel_link} \u00b7 Be first in line.\n"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
         "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
         "\U0001f4b0  @AmazonGiftCardBot  \u2014  Cards for Everyone\n\n"
         "\U0001f680 Connect: mstsc \u2192 paste IP \u2192 login\n"
         "\u2705 Works on PC \u00b7 Mac \u00b7 Android \u00b7 iPhone\n\n"
