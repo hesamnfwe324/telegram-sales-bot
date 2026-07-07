@@ -6,9 +6,10 @@ One post type only:
   - Scan fails or finds nothing → skips this cycle (no fallback AI posts)
 
 KEY DESIGN:
-  Scan ONCE per cycle, then post the same IP to ALL channels that are
-  ready (not on cooldown). This way a scan timeout never blocks some
-  channels because of another channel's failed scan.
+  Each ready channel gets its OWN unique RDP server (different IP + country).
+  scan_for_rdp() pops randomly from the Redis pool so every call returns a
+  distinct IP. Results are pre-fetched for all channels before posting begins,
+  so a scan timeout on one channel never blocks the others.
 
 SYNC FIX (Jul 2026):
   Some channels drift out of phase — their cooldown expires minutes before
@@ -315,35 +316,56 @@ async def run_auto_poster(userbot_manager):
                 await asyncio.sleep(600)
                 continue
 
-            # ── Step 3: Scan ONCE for a live server ──────────────────────────
-            # One scan serves all ready channels — no redundant scans.
+            # ── Step 3: Fetch one unique RDP result per ready channel ────────
+            # Each channel gets a DIFFERENT server (different IP + country).
+            # scan_for_rdp() pops randomly from the Redis pool, so every call
+            # returns a distinct IP. We pre-fetch all results before posting
+            # so a timeout on one channel never blocks the others.
             from app.services.scanner.rdp_scanner import scan_for_rdp
-            try:
-                rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
-            except asyncio.TimeoutError:
-                logger.warning("auto_poster_rdp_scan_timeout")
-                await asyncio.sleep(300)
-                continue
-            except Exception as scan_err:
-                logger.error("auto_poster_rdp_scan_error", error=str(scan_err))
-                await asyncio.sleep(300)
-                continue
 
-            if not rdp_result:
-                logger.info("auto_poster_rdp_no_result_sleeping_5min")
+            channel_results: list[tuple] = []   # (channel, rdp_result)
+            for ch in ready_channels:
+                try:
+                    rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
+                    if rdp_result:
+                        channel_results.append((ch, rdp_result))
+                        logger.info(
+                            "auto_poster_rdp_fetched",
+                            channel=ch.display_name,
+                            ip=rdp_result["ip"],
+                            country=rdp_result["country_name"],
+                        )
+                    else:
+                        logger.info(
+                            "auto_poster_rdp_no_result_skipping_channel",
+                            channel=ch.display_name,
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "auto_poster_rdp_scan_timeout_skipping_channel",
+                        channel=ch.display_name,
+                    )
+                except Exception as scan_err:
+                    logger.error(
+                        "auto_poster_rdp_scan_error_skipping_channel",
+                        channel=ch.display_name,
+                        error=str(scan_err),
+                    )
+
+            if not channel_results:
+                logger.info("auto_poster_rdp_no_results_sleeping_5min")
                 await asyncio.sleep(300)
                 continue
 
             logger.info(
-                "auto_poster_rdp_found",
-                ip=rdp_result["ip"],
-                country=rdp_result["country_name"],
+                "auto_poster_rdp_fetch_done",
+                fetched=len(channel_results),
                 ready_channels=len(ready_channels),
             )
 
-            # ── Step 4: Post to every ready channel ───────────────────────────
+            # ── Step 4: Post each channel's unique server ─────────────────────
             posted = 0
-            for ch in ready_channels:
+            for ch, rdp_result in channel_results:
                 success = await _post_rdp_result_to_channel(rdp_result, ch)
                 if success:
                     await mark_channel_posted(str(ch.id))
