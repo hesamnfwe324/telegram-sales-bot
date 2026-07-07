@@ -63,7 +63,8 @@ _CONCURRENCY  = 80   # parallel TCP connections
 _TCP_TIMEOUT  = 3.0  # seconds per connect attempt
 _POOL_TTL     = 6 * 3600        # 6 hours — IPs go stale fast; never keep longer
 _USED_TTL     = 7 * 24 * 3600  # 7 days dedup window
-_POOL_MAX_POP = 20  # max attempts when looking for a live IP from pool
+_POOL_MAX_POP = 6   # max pool pop attempts before falling back to inline scan
+                    # keeps worst-case pool-check latency under ~20s (6 × 3s)
 
 
 class RDPResult(TypedDict):
@@ -248,8 +249,9 @@ async def scan_for_rdp() -> Optional[RDPResult]:
                 ip = entry["ip"]
 
                 # Re-verify the IP is still reachable RIGHT NOW
+                # _tcp_open already applies _TCP_TIMEOUT internally — no extra wrap needed
                 try:
-                    still_alive = await asyncio.wait_for(_tcp_open(ip), timeout=_TCP_TIMEOUT)
+                    still_alive = await _tcp_open(ip)
                 except Exception:
                     still_alive = False
 
@@ -259,13 +261,18 @@ async def scan_for_rdp() -> Optional[RDPResult]:
                                 attempt=_pop_attempt + 1)
                     continue  # try next entry in pool
 
-                # Mark as recently used (dedup)
-                await r.sadd(_USED_KEY, ip)
-                await r.expire(_USED_KEY, _USED_TTL)
-
                 logger.info("rdp_from_pool_verified", ip=ip,
                             country=entry.get("country_name"),
                             attempts_needed=_pop_attempt + 1)
+
+                # Mark as recently used for dedup — errors here must NOT discard
+                # a live IP we already verified; return it regardless
+                try:
+                    await r.sadd(_USED_KEY, ip)
+                    await r.expire(_USED_KEY, _USED_TTL)
+                except Exception as dedup_err:
+                    logger.warning("rdp_dedup_write_failed", ip=ip, error=str(dedup_err)[:60])
+
                 return RDPResult(
                     ip=ip,
                     port=3389,
@@ -277,7 +284,8 @@ async def scan_for_rdp() -> Optional[RDPResult]:
                 )
             except Exception as e:
                 logger.warning("rdp_pool_pop_error", error=str(e)[:80])
-                break
+                # transient Redis error — skip this iteration, don't abort the loop
+                continue
 
     # ── 2. Inline scan fallback ──────────────────────────────────────────────
     logger.info("rdp_pool_empty_scanning_inline")
