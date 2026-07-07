@@ -478,7 +478,6 @@ def get_system_prompt(language: str) -> str:
       [payment section]
       [closing reminder in target language + English] ← repeated at BOTTOM
     """
-    lang_name = LANGUAGE_NAMES.get(language, "English")
     base = _SYSTEM_BASE.get(language, _SYSTEM_BASE["en"])
     payment = _build_payment_section(language)
 
