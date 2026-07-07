@@ -5,7 +5,7 @@ from app.models.customer import Customer
 from app.models.conversation import Conversation, Message
 from app.services.ai.engine import generate_reply, extract_facts_from_conversation
 from app.services.ai.language import detect_language
-from app.services.ai.prompts import get_system_prompt, get_objection_handler
+from app.services.ai.prompts import get_system_prompt, get_objection_handler, get_objection_label
 from app.services.ai.memory import (
     get_recent_messages,
     build_context_prompt,
@@ -161,7 +161,8 @@ async def handle_private_message(event, account_id: str):
         if classification.get("objection_type") and classification["objection_type"] != "none":
             handler = get_objection_handler(classification["objection_type"], language)
             if handler:
-                objection_hint = f"\n\nOBJECTION GUIDANCE: {handler}"
+                label = get_objection_label(language)
+                objection_hint = f"\n\n{label}: {handler}"
 
         full_system = f"{system_prompt}\n\n{context_prompt}{objection_hint}"
 

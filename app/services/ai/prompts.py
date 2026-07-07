@@ -364,30 +364,136 @@ LANGUAGE_NAMES = {
     "es": "Spanish (Español)",
 }
 
+# Per-language character-set enforcement rules.
+# Written in the target language so the model reads them in-context.
+_SCRIPT_RULES: dict[str, str] = {
+    "fa": (
+        "⛔ قانون مطلق زبان — بدون استثنا:\n"
+        "مشتری به فارسی پیام داده. تمام پاسخ باید ۱۰۰٪ فارسی باشد.\n"
+        "ممنوعیت‌های سخت:\n"
+        "  • هیچ حرف روسی/کیریلیک (А Б В Г Д Е Ж а б в г д е ж ...) مجاز نیست — صفر کلمه\n"
+        "  • هیچ کلمه انگلیسی (حروف A-Z یا a-z) مجاز نیست مگر اسامی فنی ثابت مثل VPS، NVMe، SSD، RAM، DDoS\n"
+        "  • در صورت شک، معادل فارسی را بنویس، نه کلمه بیگانه\n"
+        "نقض این قانون کاملاً غیرقابل قبول است."
+    ),
+    "ar": (
+        "⛔ قاعدة اللغة المطلقة — بدون استثناء:\n"
+        "العميل يتواصل بالعربية. يجب أن يكون ردك 100% بالعربية.\n"
+        "محظور تماماً: أي حرف روسي/سيريلي أو كلمات إنجليزية (ما عدا المصطلحات التقنية الثابتة: VPS, SSD, RAM, DDoS)."
+    ),
+    "ru": (
+        "⛔ АБСОЛЮТНОЕ ПРАВИЛО ЯЗЫКА — без исключений:\n"
+        "Клиент пишет по-русски. Весь ответ должен быть на 100% русском языке.\n"
+        "Запрещено: слова на персидском, арабском, английском (кроме технических терминов: VPS, SSD, RAM, NVMe, DDoS)."
+    ),
+    "tr": (
+        "⛔ MUTLAK DİL KURALI — istisnasız:\n"
+        "Müşteri Türkçe yazıyor. Yanıtın %100 Türkçe olmalıdır.\n"
+        "Yasak: Kiril, Arapça/Farsça harfler veya İngilizce kelimeler (VPS, SSD, RAM, DDoS gibi teknik terimler hariç)."
+    ),
+    "de": (
+        "⛔ ABSOLUTE SPRACHREGEL — keine Ausnahmen:\n"
+        "Der Kunde schreibt auf Deutsch. Deine Antwort muss zu 100% auf Deutsch sein.\n"
+        "Verboten: kyrillische Zeichen, arabische/persische Buchstaben oder englische Wörter (außer Fachbegriffen: VPS, SSD, RAM, DDoS)."
+    ),
+    "fr": (
+        "⛔ RÈGLE ABSOLUE DE LANGUE — sans exception:\n"
+        "Le client écrit en français. Ta réponse doit être 100% en français.\n"
+        "Interdit: caractères cyrilliques, arabes/persans, ou mots anglais (sauf termes techniques: VPS, SSD, RAM, DDoS)."
+    ),
+    "es": (
+        "⛔ REGLA ABSOLUTA DE IDIOMA — sin excepciones:\n"
+        "El cliente escribe en español. Tu respuesta debe ser 100% en español.\n"
+        "Prohibido: caracteres cirílicos, letras árabes/persas, o palabras en inglés (excepto términos técnicos: VPS, SSD, RAM, DDoS)."
+    ),
+    "en": (
+        "⛔ ABSOLUTE LANGUAGE RULE — no exceptions:\n"
+        "The customer is writing in English. Your response must be 100% in English.\n"
+        "Forbidden: Cyrillic, Arabic/Persian, or non-English characters of any kind."
+    ),
+}
+
+# Closing reminder appended at the END of the prompt (sandwich effect).
+# Dual-language so the model sees the rule in both English and the target language.
+_CLOSING_REMINDERS: dict[str, str] = {
+    "fa": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ یادآوری نهایی: پاسخ باید کاملاً فارسی باشد.\n"
+        "هیچ حرف روسی، انگلیسی (غیر از اسامی فنی) یا زبان دیگری مجاز نیست.\n"
+        "FINAL REMINDER: Respond ONLY in Persian/Farsi. "
+        "Zero Cyrillic characters (А-Я а-я) are permitted. "
+        "Zero Latin letters except fixed technical names (VPS, SSD, RAM, NVMe, DDoS)."
+    ),
+    "ar": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ تذكير أخير: الرد يجب أن يكون بالعربية فقط. ممنوع استخدام أي حرف روسي أو كلمات أجنبية.\n"
+        "FINAL REMINDER: Respond ONLY in Arabic. Zero Cyrillic or Latin letters (except VPS/SSD/RAM/DDoS)."
+    ),
+    "ru": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ Финальное напоминание: отвечай ТОЛЬКО на русском. Ноль персидских/арабских/латинских слов (кроме VPS/SSD/RAM/NVMe/DDoS)."
+    ),
+    "tr": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ Son hatırlatma: SADECE Türkçe yanıt ver. Kiril veya yabancı kelime yasak (VPS/SSD/RAM/DDoS hariç)."
+    ),
+    "de": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ Abschließende Erinnerung: Antworte NUR auf Deutsch. Keine kyrillischen oder fremdsprachigen Wörter (außer VPS/SSD/RAM/DDoS)."
+    ),
+    "fr": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ Rappel final: Réponds UNIQUEMENT en français. Zéro caractère cyrillique ou mot étranger (sauf VPS/SSD/RAM/DDoS)."
+    ),
+    "es": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ Recordatorio final: Responde SOLO en español. Cero caracteres cirílicos o palabras extranjeras (excepto VPS/SSD/RAM/DDoS)."
+    ),
+    "en": (
+        "\n\n━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⛔ Final reminder: Respond ONLY in English."
+    ),
+}
+
+# Objection hint labels in the customer's language (not English)
+_OBJECTION_LABELS: dict[str, str] = {
+    "fa": "راهنمای پاسخ به اعتراض",
+    "ar": "توجيه للرد على الاعتراض",
+    "tr": "İtiraz yanıt rehberi",
+    "ru": "Руководство по работе с возражением",
+    "de": "Einwandbehandlung",
+    "fr": "Guide de traitement des objections",
+    "es": "Guía de manejo de objeciones",
+    "en": "Objection guidance",
+}
+
 
 def get_system_prompt(language: str) -> str:
     """
     Build the complete system prompt for the given language.
-    Includes:
-    - A hard language directive at the top (so the AI never switches language)
-    - The base system instructions in the customer's language
-    - Dynamic payment section with configured wallet addresses
+
+    Structure (sandwich):
+      [script + language rules in target language]   ← hard constraint at TOP
+      [persona + pricing + sales instructions]
+      [payment section]
+      [closing reminder in target language + English] ← repeated at BOTTOM
     """
     lang_name = LANGUAGE_NAMES.get(language, "English")
     base = _SYSTEM_BASE.get(language, _SYSTEM_BASE["en"])
     payment = _build_payment_section(language)
 
-    # Prepend a hard directive so the model always answers in the detected language
-    language_directive = (
-        f"🌐 LANGUAGE DIRECTIVE — NON-NEGOTIABLE:\n"
-        f"The customer is communicating in {lang_name}. "
-        f"You MUST respond ENTIRELY in {lang_name}. "
-        f"Do NOT switch to any other language under any circumstances, "
-        f"even if your instructions are written in a different language.\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    )
+    script_rule = _SCRIPT_RULES.get(language, _SCRIPT_RULES["en"])
+    closing = _CLOSING_REMINDERS.get(language, _CLOSING_REMINDERS["en"])
 
-    return language_directive + base + payment
+    # Separator between rule block and persona
+    separator = "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    return script_rule + "\n" + separator + base + payment + closing
+
+
+def get_objection_label(language: str) -> str:
+    """Return the 'Objection guidance' label in the customer's language."""
+    return _OBJECTION_LABELS.get(language, _OBJECTION_LABELS["en"])
 
 
 OBJECTION_HANDLERS = {
