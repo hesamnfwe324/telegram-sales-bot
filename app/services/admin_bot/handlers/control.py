@@ -255,6 +255,7 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
     from app.services.channel.auto_poster import (
         _get_active_channels, _last_post_time,
         get_cooldown_remaining, mark_channel_posted, _toggle_post_mode,
+        acquire_channel_lock, release_channel_lock,
     )
     all_channels = await _get_active_channels()
     if not all_channels:
@@ -262,9 +263,11 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         return
 
     channels = []
+    cooldowns = []
     for ch in all_channels:
         remaining = await get_cooldown_remaining(str(ch.id))
         if remaining > 0:
+            cooldowns.append(remaining)
             logger.info("rdp_admin_channel_cooldown_skip",
                         channel=ch.telegram_channel_id,
                         remaining_min=remaining // 60)
@@ -272,10 +275,10 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
             channels.append(ch)
 
     if not channels:
-        # All channels on cooldown — report time remaining for the first one
-        remaining = await get_cooldown_remaining(str(all_channels[0].id))
-        h = remaining // 3600
-        m = (remaining % 3600) // 60
+        # All channels on cooldown — show actual minimum remaining time
+        min_remaining = min(cooldowns) if cooldowns else 0
+        h = min_remaining // 3600
+        m = (min_remaining % 3600) // 60
         await status_msg.edit_text(
             f"⏳ *همه کانال‌ها در cooldown هستند!*\n\n"
             f"آخرین پست کمتر از ۳ ساعت پیش ارسال شد.\n"
@@ -319,6 +322,15 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
             logger.info("rdp_channel_skipped_opt_out", channel=ch.telegram_channel_id)
             continue
 
+        ch_id = str(ch.id)
+
+        # Acquire per-channel lock — prevents duplicate posts if auto_poster runs simultaneously
+        if not await acquire_channel_lock(ch_id, ttl=90):
+            logger.info("rdp_admin_channel_locked_skip", channel=ch.telegram_channel_id)
+            failed += 1
+            failed_reasons.append(f"{ch.telegram_channel_id}: locked by another process")
+            continue
+
         try:
             # Build post content specifically for this channel's username
             seed = random.randint(100_000, 99_999_999)
@@ -347,8 +359,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
                 )
 
             success += 1
-            await mark_channel_posted(str(ch.id))
-            _toggle_post_mode(str(ch.id))
+            await mark_channel_posted(ch_id)
+            _toggle_post_mode(ch_id)
             logger.info("rdp_sent_to_channel", channel=ch.telegram_channel_id)
             await asyncio.sleep(2)
 
@@ -356,6 +368,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
             failed += 1
             failed_reasons.append(f"{ch.telegram_channel_id}: {str(ch_err)[:60]}")
             logger.error("rdp_channel_send_failed", channel=ch.telegram_channel_id, error=str(ch_err))
+        finally:
+            await release_channel_lock(ch_id)
 
     has_img = "✅" if image_bytes else "❌ (text only)"
     result_text = (

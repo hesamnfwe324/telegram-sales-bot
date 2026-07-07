@@ -25,6 +25,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.channel import TelegramChannel
 from app.models.post import Post
 from app.services.channel.publisher import publish_post
+from app.cache.redis_client import get_redis
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -50,6 +51,35 @@ async def get_cooldown_remaining(channel_id: str) -> int:
         return max(0, int(COOLDOWN_SECONDS - elapsed))
     except Exception:
         return 0
+
+
+def _lock_key(channel_id: str) -> str:
+    return f"autoposter:lock:{channel_id}"
+
+
+async def acquire_channel_lock(channel_id: str, ttl: int = 60) -> bool:
+    """
+    Try to acquire a short-lived distributed lock for a channel post.
+    Returns True if the lock was acquired (caller may post).
+    Returns False if another process is already posting to this channel.
+    Uses Redis SET NX (atomic) to prevent duplicate concurrent posts.
+    """
+    try:
+        r = await get_redis()
+        acquired = await r.set(_lock_key(channel_id), "1", nx=True, ex=ttl)
+        return bool(acquired)
+    except Exception as e:
+        logger.warning("channel_lock_acquire_failed", channel_id=channel_id, error=str(e)[:60])
+        # If Redis fails, allow posting (better than silent drop)
+        return True
+
+
+async def release_channel_lock(channel_id: str) -> None:
+    try:
+        r = await get_redis()
+        await r.delete(_lock_key(channel_id))
+    except Exception:
+        pass
 
 
 async def mark_channel_posted(channel_id: str) -> None:
@@ -110,57 +140,71 @@ async def _post_rdp_result_to_channel(rdp_result: dict, channel: TelegramChannel
     Post an already-scanned RDP result to a single channel.
     Accepts a pre-scanned rdp_result so one scan can serve all channels
     in the same cycle — no redundant scans, no blocked channels.
+
+    Uses a short-lived Redis lock to prevent duplicate posts when the
+    auto-poster loop and an admin button run at the same time.
     """
-    from app.services.content.rdp_post_builder import build_rdp_post
+    ch_id = str(channel.id)
 
-    lang = channel.language or "en"
-    if lang == "fa":
-        lang = "en"
-
-    unique_seed = random.randint(100_000, 99_999_999)
-    rdp_content, rdp_image_url = build_rdp_post(
-        ip=rdp_result["ip"],
-        port=rdp_result["port"],
-        username=rdp_result["username"],
-        password=rdp_result["password"],
-        country_name=rdp_result["country_name"],
-        country_flag=rdp_result["country_flag"],
-        seed=unique_seed,
-        channel_username=channel.username,
-    )
-
-    if _is_duplicate(rdp_content):
-        logger.warning("rdp_post_duplicate_skipping", channel=channel.display_name)
+    # Acquire lock — if another process is already posting to this channel, skip
+    if not await acquire_channel_lock(ch_id, ttl=90):
+        logger.info("rdp_post_skipped_locked", channel=channel.display_name)
         return False
 
-    async with AsyncSessionLocal() as session:
-        post = Post(
-            account_id=channel.account_id,
-            channel_ids=[str(channel.id)],
-            content=rdp_content,
-            languages={lang: rdp_content},
-            image_url=rdp_image_url,
-            status="scheduled",
-            scheduled_at=datetime.now(timezone.utc),
+    try:
+        from app.services.content.rdp_post_builder import build_rdp_post
+
+        lang = channel.language or "en"
+        if lang == "fa":
+            lang = "en"
+
+        unique_seed = random.randint(100_000, 99_999_999)
+        rdp_content, rdp_image_url = build_rdp_post(
+            ip=rdp_result["ip"],
+            port=rdp_result["port"],
+            username=rdp_result["username"],
+            password=rdp_result["password"],
+            country_name=rdp_result["country_name"],
+            country_flag=rdp_result["country_flag"],
+            seed=unique_seed,
+            channel_username=channel.username,
         )
-        session.add(post)
-        await session.flush()
-        try:
-            await publish_post(session, post)
-            await session.commit()
-            _record_hash(rdp_content)
-            logger.info(
-                "rdp_post_sent",
-                channel=channel.display_name,
-                country=rdp_result["country_name"],
-                ip=rdp_result["ip"],
-            )
-            return True
-        except Exception as e:
-            post.status = "failed"
-            await session.commit()
-            logger.error("rdp_post_send_failed", channel=channel.display_name, error=str(e))
+
+        if _is_duplicate(rdp_content):
+            logger.warning("rdp_post_duplicate_skipping", channel=channel.display_name)
             return False
+
+        async with AsyncSessionLocal() as session:
+            post = Post(
+                account_id=channel.account_id,
+                channel_ids=[ch_id],
+                content=rdp_content,
+                languages={lang: rdp_content},
+                image_url=rdp_image_url,
+                status="scheduled",
+                scheduled_at=datetime.now(timezone.utc),
+            )
+            session.add(post)
+            await session.flush()
+            try:
+                await publish_post(session, post)
+                await session.commit()
+                _record_hash(rdp_content)
+                logger.info(
+                    "rdp_post_sent",
+                    channel=channel.display_name,
+                    country=rdp_result["country_name"],
+                    ip=rdp_result["ip"],
+                )
+                return True
+            except Exception as e:
+                post.status = "failed"
+                await session.commit()
+                logger.error("rdp_post_send_failed", channel=channel.display_name, error=str(e))
+                return False
+    finally:
+        # Always release the lock — even on exception — so next cycle isn't blocked
+        await release_channel_lock(ch_id)
 
 
 async def _get_active_channels(account_id=None):
