@@ -9,6 +9,12 @@ KEY DESIGN:
   Scan ONCE per cycle, then post the same IP to ALL channels that are
   ready (not on cooldown). This way a scan timeout never blocks some
   channels because of another channel's failed scan.
+
+SYNC FIX (Jul 2026):
+  Some channels drift out of phase — their cooldown expires minutes before
+  other channels, so they get posted in isolation and fall permanently behind.
+  Solution: if any channel will be ready within SYNC_WINDOW_SECONDS, wait
+  for it before scanning so all channels post together in the same batch.
 """
 import asyncio
 import hashlib
@@ -20,7 +26,7 @@ from collections import deque
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.db.session import AsyncSessionLocal
 from app.models.channel import TelegramChannel
 from app.models.post import Post
@@ -34,6 +40,10 @@ TEHRAN = ZoneInfo("Asia/Tehran")
 
 MIN_INTERVAL_SECONDS = 3 * 3600
 COOLDOWN_SECONDS = MIN_INTERVAL_SECONDS
+
+# If any channel's cooldown expires within this window, wait for it so all
+# channels post in a single synchronised batch instead of drifting apart.
+SYNC_WINDOW_SECONDS = 1200   # 20 minutes
 
 
 def _cooldown_key(channel_id: str) -> str:
@@ -208,25 +218,44 @@ async def _post_rdp_result_to_channel(rdp_result: dict, channel: TelegramChannel
 
 
 async def _get_active_channels(account_id=None):
+    """
+    Return all active channels in randomised order.
+
+    ORDER BY RANDOM() ensures that no channel is consistently at the end of
+    the posting queue across cycles. Without this, the last channels in heap
+    order always absorb flood-wait errors and drift out of phase over time.
+    """
     async with AsyncSessionLocal() as session:
-        q = select(TelegramChannel).where(TelegramChannel.is_active == True)
+        q = (
+            select(TelegramChannel)
+            .where(TelegramChannel.is_active == True)
+            .order_by(func.random())
+        )
         if account_id:
             q = q.where(TelegramChannel.account_id == uuid.UUID(str(account_id)))
         result = await session.execute(q)
         return result.scalars().all()
 
 
+async def _compute_cooldowns(channels) -> dict[str, int]:
+    """Return {channel_id: seconds_remaining} for every channel."""
+    cooldowns = {}
+    for ch in channels:
+        cooldowns[str(ch.id)] = await get_cooldown_remaining(str(ch.id))
+    return cooldowns
+
+
 async def run_auto_poster(userbot_manager):
     """
     Main auto-poster loop.
 
-    FIX: Previously called _post_to_channel() per channel, which ran a
-    separate scan for EACH channel. A scan timeout on channel N blocked
-    channels N+1, N+2, ... and caused some channels to never post.
+    FIX (original): scan ONCE per cycle, post to ALL ready channels so a
+    scan timeout on channel N never blocks channels N+1, N+2, ...
 
-    Now: scan ONCE per cycle, post the result to ALL ready channels.
-    Each channel still gets its own per-channel cooldown and its own
-    post text (different seed → different channel tag line).
+    FIX (Jul 2026 — sync): if some channels are ready NOW and others will be
+    ready within SYNC_WINDOW_SECONDS (20 min), wait for the laggards before
+    scanning. This keeps all channels in a single synchronised batch and
+    prevents permanent phase drift where a subset always posts alone.
     """
     logger.info("auto_poster_started — rdp_only_mode")
     await asyncio.sleep(30)
@@ -244,18 +273,41 @@ async def run_auto_poster(userbot_manager):
                 await asyncio.sleep(300)
                 continue
 
-            # ── Step 1: Find channels ready to post ──────────────────────────
-            ready_channels = []
-            for ch in channels:
-                cooldown = await get_cooldown_remaining(str(ch.id))
-                if cooldown > 0:
+            # ── Step 1: Compute cooldowns for every channel ───────────────────
+            cooldowns = await _compute_cooldowns(channels)
+
+            ready_channels = [ch for ch in channels if cooldowns[str(ch.id)] == 0]
+            waiting_channels = [
+                (ch, cooldowns[str(ch.id)])
+                for ch in channels
+                if cooldowns[str(ch.id)] > 0
+            ]
+
+            for ch, rem in waiting_channels:
+                logger.info(
+                    "auto_poster_channel_cooldown",
+                    channel=ch.display_name,
+                    remaining_minutes=rem // 60,
+                )
+
+            # ── Step 2: Synchronisation gate ─────────────────────────────────
+            # If some channels are ready but others will be ready soon, wait
+            # for the stragglers so all channels post in one coherent batch.
+            # This prevents permanent phase-drift (e.g. 3 channels always
+            # posting 15–20 min before the other 11, and then being skipped).
+            if ready_channels and waiting_channels:
+                min_wait = min(rem for _, rem in waiting_channels)
+                if min_wait <= SYNC_WINDOW_SECONDS:
                     logger.info(
-                        "auto_poster_channel_cooldown",
-                        channel=ch.display_name,
-                        remaining_minutes=cooldown // 60,
+                        "auto_poster_sync_waiting",
+                        ready=len(ready_channels),
+                        waiting=len(waiting_channels),
+                        wait_seconds=min_wait,
+                        wait_minutes=round(min_wait / 60, 1),
                     )
-                else:
-                    ready_channels.append(ch)
+                    await asyncio.sleep(min_wait + 5)   # +5s safety margin
+                    # Re-evaluate from the top with fresh cooldown data
+                    continue
 
             if not ready_channels:
                 # All channels are on cooldown — check back in 10 min
@@ -263,7 +315,7 @@ async def run_auto_poster(userbot_manager):
                 await asyncio.sleep(600)
                 continue
 
-            # ── Step 2: Scan ONCE for a live server ──────────────────────────
+            # ── Step 3: Scan ONCE for a live server ──────────────────────────
             # One scan serves all ready channels — no redundant scans.
             from app.services.scanner.rdp_scanner import scan_for_rdp
             try:
@@ -289,19 +341,20 @@ async def run_auto_poster(userbot_manager):
                 ready_channels=len(ready_channels),
             )
 
-            # ── Step 3: Post to every ready channel ───────────────────────────
+            # ── Step 4: Post to every ready channel ───────────────────────────
             posted = 0
             for ch in ready_channels:
                 success = await _post_rdp_result_to_channel(rdp_result, ch)
                 if success:
                     await mark_channel_posted(str(ch.id))
                     posted += 1
-                    # Short pause between channels to avoid flood
-                    await asyncio.sleep(random.randint(3, 8))
+                    # Randomised pause between channels — long enough to avoid
+                    # Telegram flood limits when posting to many channels.
+                    await asyncio.sleep(random.randint(8, 15))
 
             logger.info("auto_poster_cycle_done", posted=posted, total_ready=len(ready_channels))
 
-            # ── Step 4: Sleep before next cycle ──────────────────────────────
+            # ── Step 5: Sleep before next cycle ──────────────────────────────
             # 15 min if we posted something, 10 min if all failed
             await asyncio.sleep(900 if posted > 0 else 600)
 

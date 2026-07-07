@@ -188,6 +188,55 @@ async def _download_with_fallbacks(urls: list[str]) -> bytes | None:
     return None
 
 
+async def _send_with_flood_retry(send_fn, *args, max_retries: int = 3, **kwargs):
+    """
+    Call a Telethon send function and transparently handle FloodWaitError.
+
+    When Telegram returns FLOOD_WAIT_X (too many requests), Telethon raises
+    FloodWaitError with a `.seconds` attribute indicating how long to wait.
+    Without this handler, the exception propagates up, the channel gets no
+    post, and — worse — all subsequent channels in the same batch also fail
+    because the client remains in a flood-limited state.
+
+    Strategy:
+      - Retry up to `max_retries` times after sleeping the required wait.
+      - Cap each individual wait at 120 seconds to avoid blocking too long.
+      - If the flood wait exceeds 120 s, raise so the caller can record the
+        failure and move on to the next channel rather than stalling the loop.
+    """
+    MAX_FLOOD_WAIT = 120  # seconds — refuse to wait longer than this
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            return await send_fn(*args, **kwargs)
+        except Exception as exc:
+            exc_name = type(exc).__name__
+            # Telethon's FloodWaitError carries a .seconds attribute
+            wait_seconds = getattr(exc, "seconds", None)
+            if wait_seconds is not None:
+                # This IS a FloodWaitError
+                if wait_seconds > MAX_FLOOD_WAIT:
+                    logger.warning(
+                        "flood_wait_too_long_giving_up",
+                        required_wait=wait_seconds,
+                        max_allowed=MAX_FLOOD_WAIT,
+                        attempt=attempt,
+                    )
+                    raise
+                logger.warning(
+                    "flood_wait_sleeping_before_retry",
+                    wait_seconds=wait_seconds,
+                    attempt=attempt,
+                    max_retries=max_retries,
+                )
+                await asyncio.sleep(wait_seconds + 2)  # +2 s safety margin
+                continue  # retry
+            # Not a FloodWaitError — re-raise immediately
+            raise
+    # Exhausted retries
+    raise RuntimeError(f"_send_with_flood_retry: exhausted {max_retries} retries")
+
+
 async def publish_post(session: AsyncSession, post: Post) -> dict:
     if not _userbot_manager:
         logger.error("publisher_no_userbot_manager")
@@ -249,7 +298,8 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
 
                     if is_video:
                         file_obj.name = "video.mp4"
-                        msg = await client.send_file(
+                        msg = await _send_with_flood_retry(
+                            client.send_file,
                             channel.telegram_channel_id,
                             file_obj,
                             caption=caption,
@@ -259,7 +309,8 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                         media_type = "video"
                     else:
                         file_obj.name = "image.jpg"
-                        msg = await client.send_file(
+                        msg = await _send_with_flood_retry(
+                            client.send_file,
                             channel.telegram_channel_id,
                             file_obj,
                             caption=caption,
@@ -282,7 +333,8 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
 
             if not media_sent:
                 text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
-                msg = await client.send_message(
+                msg = await _send_with_flood_retry(
+                    client.send_message,
                     channel.telegram_channel_id,
                     text,
                     parse_mode="md",
