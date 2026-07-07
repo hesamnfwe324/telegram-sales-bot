@@ -249,29 +249,41 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         return
     client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
-    # ── Step 4: Get active channels + cooldown check ─────────────────────────
+    # ── Step 4: Get active channels — filter per-channel cooldown ────────────
+    # BUG FIX: previously checked only channels[0] cooldown and blocked ALL
+    # channels. Now each channel is checked independently; only ready ones post.
     from app.services.channel.auto_poster import (
         _get_active_channels, _last_post_time,
         get_cooldown_remaining, mark_channel_posted, _toggle_post_mode,
     )
-    channels = await _get_active_channels()
-    if not channels:
+    all_channels = await _get_active_channels()
+    if not all_channels:
         await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
         return
 
-    if channels:
-        cooldown = await get_cooldown_remaining(str(channels[0].id))
-        if cooldown > 0:
-            h = cooldown // 3600
-            m = (cooldown % 3600) // 60
-            await status_msg.edit_text(
-                f"⏳ *هنوز باید صبر کنید!*\n\n"
-                f"آخرین پست کمتر از ۳ ساعت پیش ارسال شد.\n"
-                f"⏱ تا پست بعدی: *{h}h {m:02d}m* دیگر",
-                parse_mode="Markdown",
-                reply_markup=back_kb(),
-            )
-            return
+    channels = []
+    for ch in all_channels:
+        remaining = await get_cooldown_remaining(str(ch.id))
+        if remaining > 0:
+            logger.info("rdp_admin_channel_cooldown_skip",
+                        channel=ch.telegram_channel_id,
+                        remaining_min=remaining // 60)
+        else:
+            channels.append(ch)
+
+    if not channels:
+        # All channels on cooldown — report time remaining for the first one
+        remaining = await get_cooldown_remaining(str(all_channels[0].id))
+        h = remaining // 3600
+        m = (remaining % 3600) // 60
+        await status_msg.edit_text(
+            f"⏳ *همه کانال‌ها در cooldown هستند!*\n\n"
+            f"آخرین پست کمتر از ۳ ساعت پیش ارسال شد.\n"
+            f"⏱ کمترین زمان باقی‌مانده: *{h}h {m:02d}m*",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        return
 
     # ── Step 5: Download image once (shared across channels) ─────────────────
     from app.services.content.rdp_post_builder import build_rdp_post
