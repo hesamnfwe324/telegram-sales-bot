@@ -2,59 +2,190 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# ── Pricing & specs revised: better hardware, more competitive prices ─────────
+# Changes:
+#   • VPS: prices lowered ~25-35%, RAM and disk significantly increased
+#   • Cloud: prices lowered ~30%, disk boosted
+#   • Dedicated: prices lowered ~20-25%, disk upgraded to SSD/NVMe across the board
+#   • Added more use-case tags for smarter matching
+
 PLANS = {
     "vps": [
-        {"name": "VPS Starter", "price": 5, "cpu": 1, "ram": 1, "disk": 25, "bandwidth": "1TB", "best_for": ["personal", "testing", "small blog", "dev environment"]},
-        {"name": "VPS Basic", "price": 10, "cpu": 2, "ram": 2, "disk": 50, "bandwidth": "2TB", "best_for": ["wordpress", "small website", "small api"]},
-        {"name": "VPS Standard", "price": 20, "cpu": 4, "ram": 4, "disk": 80, "bandwidth": "4TB", "best_for": ["ecommerce", "medium traffic", "nodejs app", "django", "laravel"]},
-        {"name": "VPS Advanced", "price": 40, "cpu": 8, "ram": 8, "disk": 160, "bandwidth": "8TB", "best_for": ["high traffic", "multiple apps", "game server small", "saas"]},
-        {"name": "VPS Pro", "price": 80, "cpu": 16, "ram": 16, "disk": 320, "bandwidth": "Unlimited", "best_for": ["enterprise", "high load", "game server", "streaming"]},
+        {
+            "name": "VPS Starter",
+            "price": 3,
+            "cpu": 1,
+            "ram": 2,
+            "disk": 40,
+            "bandwidth": "2TB",
+            "best_for": ["personal", "testing", "small blog", "dev environment", "bot", "script", "vpn"],
+        },
+        {
+            "name": "VPS Basic",
+            "price": 7,
+            "cpu": 2,
+            "ram": 4,
+            "disk": 80,
+            "bandwidth": "4TB",
+            "best_for": ["wordpress", "small website", "small api", "panel", "cpanel", "directadmin"],
+        },
+        {
+            "name": "VPS Standard",
+            "price": 15,
+            "cpu": 4,
+            "ram": 8,
+            "disk": 120,
+            "bandwidth": "8TB",
+            "best_for": [
+                "ecommerce", "medium traffic", "nodejs app", "django", "laravel",
+                "shop", "store", "woocommerce", "magento", "react", "next.js",
+            ],
+        },
+        {
+            "name": "VPS Advanced",
+            "price": 28,
+            "cpu": 8,
+            "ram": 16,
+            "disk": 250,
+            "bandwidth": "15TB",
+            "best_for": [
+                "high traffic", "multiple apps", "game server small", "saas",
+                "mining", "trading bot", "crypto", "discord bot", "telegram bot heavy",
+            ],
+        },
+        {
+            "name": "VPS Pro",
+            "price": 55,
+            "cpu": 16,
+            "ram": 32,
+            "disk": 500,
+            "bandwidth": "Unlimited",
+            "best_for": ["enterprise", "high load", "game server", "streaming", "heavy processing"],
+        },
     ],
     "cloud": [
-        {"name": "Cloud Starter", "price": 15, "cpu": 2, "ram": 4, "disk": 50, "bandwidth": "5TB", "best_for": ["startups", "auto-scaling apps", "microservices small"]},
-        {"name": "Cloud Business", "price": 50, "cpu": 8, "ram": 16, "disk": 200, "bandwidth": "10TB", "best_for": ["growing business", "high availability", "ecommerce enterprise", "saas platform"]},
-        {"name": "Cloud Enterprise", "price": 150, "cpu": 32, "ram": 64, "disk": 500, "bandwidth": "Unlimited", "best_for": ["large scale", "enterprise apps", "big data", "kubernetes"]},
+        {
+            "name": "Cloud Starter",
+            "price": 10,
+            "cpu": 2,
+            "ram": 4,
+            "disk": 100,
+            "bandwidth": "10TB",
+            "best_for": ["startups", "auto-scaling apps", "microservices small", "staging"],
+        },
+        {
+            "name": "Cloud Business",
+            "price": 35,
+            "cpu": 8,
+            "ram": 16,
+            "disk": 300,
+            "bandwidth": "20TB",
+            "best_for": [
+                "growing business", "high availability", "ecommerce enterprise",
+                "saas platform", "crm", "erp small",
+            ],
+        },
+        {
+            "name": "Cloud Enterprise",
+            "price": 100,
+            "cpu": 32,
+            "ram": 64,
+            "disk": 700,
+            "bandwidth": "Unlimited",
+            "best_for": ["large scale", "enterprise apps", "big data", "kubernetes", "docker swarm"],
+        },
     ],
     "dedicated": [
-        {"name": "Dedicated Entry", "price": 80, "cpu": "Intel Xeon E3 4-core", "ram": 32, "disk": "2×1TB HDD", "bandwidth": "Unlimited", "best_for": ["database server", "game server", "bare metal performance"]},
-        {"name": "Dedicated Business", "price": 150, "cpu": "Intel Xeon E5 8-core", "ram": 64, "disk": "2×2TB SSD", "bandwidth": "Unlimited", "best_for": ["high performance web", "video streaming", "fintech", "large database"]},
-        {"name": "Dedicated Enterprise", "price": 300, "cpu": "Dual Intel Xeon 16-core", "ram": 128, "disk": "4×1TB NVMe", "bandwidth": "Unlimited", "best_for": ["machine learning", "big data analytics", "enterprise ERP", "massive scale"]},
+        {
+            "name": "Dedicated Entry",
+            "price": 60,
+            "cpu": "Intel Xeon E3 4-core / 8-thread",
+            "ram": 32,
+            "disk": "2×500GB SSD",
+            "bandwidth": "Unlimited",
+            "best_for": ["database server", "game server", "bare metal performance", "proxy", "vpn server"],
+        },
+        {
+            "name": "Dedicated Business",
+            "price": 110,
+            "cpu": "Intel Xeon E5 8-core / 16-thread",
+            "ram": 64,
+            "disk": "2×1TB NVMe",
+            "bandwidth": "Unlimited",
+            "best_for": [
+                "high performance web", "video streaming", "fintech",
+                "large database", "heavy api", "render farm small",
+            ],
+        },
+        {
+            "name": "Dedicated Enterprise",
+            "price": 200,
+            "cpu": "Dual Intel Xeon 16-core / 32-thread",
+            "ram": 128,
+            "disk": "4×2TB NVMe",
+            "bandwidth": "Unlimited",
+            "best_for": [
+                "machine learning", "ai training", "big data analytics",
+                "enterprise erp", "massive scale", "video encoding", "render farm",
+            ],
+        },
     ],
 }
 
 USE_CASE_SERVICE_MAP = {
+    # VPS use cases
     "wordpress": "vps",
     "blog": "vps",
     "personal": "vps",
     "testing": "vps",
     "dev": "vps",
+    "vpn": "vps",
+    "bot": "vps",
+    "script": "vps",
+    "panel": "vps",
+    "cpanel": "vps",
+    "directadmin": "vps",
+    "woocommerce": "vps",
+    "shop": "vps",
+    "store": "vps",
+    # Cloud use cases
     "ecommerce": "cloud",
     "saas": "cloud",
     "startup": "cloud",
     "microservices": "cloud",
     "kubernetes": "cloud",
+    "docker": "cloud",
+    "crm": "cloud",
+    "erp": "cloud",
+    "staging": "cloud",
+    # Dedicated use cases
     "machine learning": "dedicated",
     "ml": "dedicated",
+    "ai": "dedicated",
     "game server": "dedicated",
     "database": "dedicated",
     "streaming": "dedicated",
     "fintech": "dedicated",
+    "mining": "dedicated",
+    "render": "dedicated",
+    "encoding": "dedicated",
+    "proxy": "dedicated",
 }
 
 COMPARISON_LANGS = {
     "en": {
-        "header": "📦 *Recommended Plans for You*",
-        "footer": "💬 Want more details or a custom quote? Just ask!",
-        "month": "month",
+        "header": "📦 *Plans picked for your use case:*",
+        "footer": "💬 Questions? Want a custom config? Just say the word.",
+        "month": "mo",
         "cpu": "CPU",
         "ram": "RAM",
         "disk": "Storage",
         "bw": "Bandwidth",
-        "best": "Best for",
+        "best": "Ideal for",
     },
     "fa": {
-        "header": "📦 *پلن‌های پیشنهادی برای شما*",
-        "footer": "💬 برای اطلاعات بیشتر یا قیمت سفارشی بپرسید!",
+        "header": "📦 *پلن‌های مناسب برای کار شما:*",
+        "footer": "💬 سوالی داری؟ می‌خوای تنظیم سفارشی؟ بگو تا حلش کنیم.",
         "month": "ماه",
         "cpu": "پردازنده",
         "ram": "RAM",
@@ -63,34 +194,34 @@ COMPARISON_LANGS = {
         "best": "مناسب برای",
     },
     "ar": {
-        "header": "📦 *الخطط الموصى بها لك*",
-        "footer": "💬 هل تريد المزيد من التفاصيل أو عرض مخصص؟ فقط اسأل!",
+        "header": "📦 *الخطط المناسبة لاحتياجك:*",
+        "footer": "💬 أي سؤال؟ تريد إعداداً خاصاً؟ قل لي.",
         "month": "شهر",
         "cpu": "المعالج",
         "ram": "الذاكرة",
         "disk": "التخزين",
-        "bw": "النطاق الترددي",
-        "best": "الأفضل لـ",
+        "bw": "النطاق",
+        "best": "مثالي لـ",
     },
     "tr": {
-        "header": "📦 *Sizin İçin Önerilen Planlar*",
-        "footer": "💬 Daha fazla bilgi veya özel teklif için sorun!",
+        "header": "📦 *Kullanımınıza özel planlar:*",
+        "footer": "💬 Soru var mı? Özel yapılandırma ister misiniz? Söyleyin.",
         "month": "ay",
         "cpu": "İşlemci",
         "ram": "RAM",
         "disk": "Depolama",
         "bw": "Bant Genişliği",
-        "best": "En iyi kullanım",
+        "best": "İdeal kullanım",
     },
     "ru": {
-        "header": "📦 *Рекомендованные планы для вас*",
-        "footer": "💬 Нужны подробности или индивидуальное предложение? Просто спросите!",
+        "header": "📦 *Планы под ваш сценарий:*",
+        "footer": "💬 Вопросы? Нужна кастомная конфигурация? Пишите.",
         "month": "мес",
         "cpu": "ЦПУ",
         "ram": "RAM",
         "disk": "Диск",
         "bw": "Трафик",
-        "best": "Лучше всего для",
+        "best": "Идеально для",
     },
 }
 
@@ -105,7 +236,7 @@ def recommend_plans(
 
     if use_case and service_type in ("general", "none"):
         for keyword, svc in USE_CASE_SERVICE_MAP.items():
-            if keyword in use_case:
+            if keyword in use_case or use_case in keyword:
                 service_type = svc
                 break
 
@@ -132,7 +263,8 @@ def recommend_plans(
     elif tech_level == "expert":
         plans = plans[-3:]
 
-    return plans[:3]
+    # Return max 2 most relevant plans — cleaner, less overwhelming
+    return plans[:2]
 
 
 def format_plan_recommendation(plans: list[dict], language: str = "en") -> str:
