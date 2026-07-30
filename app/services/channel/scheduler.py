@@ -16,7 +16,7 @@ async def process_scheduled_posts(session: AsyncSession) -> int:
                 Post.status == "scheduled",
                 Post.scheduled_at <= now,
             )
-        ).limit(10)
+        )  # no LIMIT — process every due post; a hard cap of 10 silently drops posts
     )
     posts = result.scalars().all()
 

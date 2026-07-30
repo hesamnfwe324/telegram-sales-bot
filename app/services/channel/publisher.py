@@ -362,7 +362,9 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
 
         temp_client = None
         try:
-            default_client = _userbot_manager.get_client(str(post.account_id))
+            # Use channel's own account_id — not post.account_id — so channels
+            # belonging to different accounts each use the correct userbot client.
+            default_client = _userbot_manager.get_client(str(channel.account_id))
             if not (default_client and default_client.is_connected):
                 results[str(channel_id)] = {"status": "error", "reason": "no_connected_client"}
                 continue

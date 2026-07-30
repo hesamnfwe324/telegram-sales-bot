@@ -198,8 +198,25 @@ async def _post_rdp_result_to_channel(rdp_result: dict, channel: TelegramChannel
             session.add(post)
             await session.flush()
             try:
-                await publish_post(session, post)
+                pub_results = await publish_post(session, post)
+                published_count = sum(
+                    1 for r in pub_results.values() if r.get("status") == "published"
+                )
                 await session.commit()
+
+                if not published_count:
+                    # publish_post returned without actually sending (manager not
+                    # ready, posting paused, or all channels errored).  Do NOT call
+                    # mark_channel_posted — the channel must stay ready so it is
+                    # retried next cycle instead of sitting on a 3-hour cooldown
+                    # with no post delivered.
+                    logger.warning(
+                        "rdp_post_publish_no_success_not_marking_cooldown",
+                        channel=channel.display_name,
+                        results=pub_results,
+                    )
+                    return False
+
                 _record_hash(rdp_content)
                 logger.info(
                     "rdp_post_sent",
