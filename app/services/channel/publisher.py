@@ -287,7 +287,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
 
             media_sent = False
 
-              # ── UPGRADE TEAM banner — always sent with every channel post —————————
+              # ── UPGRADE TEAM banner — always sent with every channel post ─────────
               banner_bytes = _read_local_file(_BANNER_REL_PATH)
               if banner_bytes:
                   caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
@@ -315,7 +315,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                       size_kb=len(banner_bytes) // 1024,
                   )
               else:
-                  # Banner file missing — fall back to post’s own image_url
+                  # Banner file missing — fall back to post's own image_url
                   logger.warning(
                       "banner_not_found_falling_back_to_original_media",
                       path=_BANNER_REL_PATH,
