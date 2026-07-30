@@ -292,7 +292,7 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
     from app.services.content.rdp_post_builder import build_rdp_post
     from app.services.channel.publisher import (
         _parse_image_urls, _download_with_fallbacks, _build_post_text,
-        _read_local_file, _FILE_MARKER, _BANNER_REL_PATH, _admin_button,
+        _read_local_file, _FILE_MARKER, _BANNER_REL_PATH,
     )
 
     # Build a temporary post to get the image URL
@@ -362,12 +362,10 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
                 await client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=caption, parse_mode="md",
-                    buttons=_admin_button(),
                 )
             else:
                 await client.send_message(
                     ch.telegram_channel_id, ch_content, parse_mode="md",
-                    buttons=_admin_button(),
                 )
 
             success += 1
@@ -396,6 +394,94 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
 
     await status_msg.edit_text(result_text, parse_mode="Markdown", reply_markup=back_kb())
     logger.info("admin_rdp_post_done", success=success, failed=failed, ip=ip, country=country_name)
+
+
+@router.callback_query(F.data == "ctrl_rdp_plans_post")
+async def ctrl_rdp_plans_post(callback: CallbackQuery):
+    """Send a beautiful RDP pricing-plans post immediately to all active channels."""
+    status_msg = await callback.message.answer(
+        "📋 *در حال ارسال پست پلن‌های RDP...*\n\n"
+        "⏳ لطفاً صبر کنید...",
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+    if not _userbot_manager:
+        await status_msg.edit_text("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
+        return
+
+    # ── Get a connected userbot client ───────────────────────────────────────
+    accounts = _userbot_manager.list_accounts()
+    connected_accounts = [a for a in accounts if a["is_connected"]]
+    if not connected_accounts:
+        await status_msg.edit_text(
+            "❌ *هیچ یوزربات متصلی وجود ندارد.*\n\nلطفاً ابتدا UserBot را Start کنید.",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        return
+    client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
+
+    # ── Get active channels ───────────────────────────────────────────────────
+    from app.services.channel.auto_poster import _get_active_channels
+    all_channels = await _get_active_channels()
+    if not all_channels:
+        await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
+        return
+
+    # ── Load banner image once ────────────────────────────────────────────────
+    from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
+    from app.services.content.rdp_plans_builder import build_rdp_plans_post
+    import io
+
+    image_bytes = _read_local_file(_BANNER_REL_PATH)
+
+    # ── Send to each channel ─────────────────────────────────────────────────
+    success = 0
+    failed = 0
+    failed_reasons = []
+
+    for ch in all_channels:
+        ch_id = str(ch.id)
+        try:
+            seed = random.randint(0, 9_999_999)
+            post_text, _ = build_rdp_plans_post(
+                channel_username=ch.username,
+                seed=seed,
+            )
+
+            if image_bytes:
+                file_obj = io.BytesIO(image_bytes)
+                file_obj.name = "banner.jpg"
+                await client.send_file(
+                    ch.telegram_channel_id, file_obj,
+                    caption=post_text, parse_mode="md",
+                )
+            else:
+                await client.send_message(
+                    ch.telegram_channel_id, post_text, parse_mode="md",
+                )
+
+            success += 1
+            logger.info("rdp_plans_sent_to_channel", channel=ch.telegram_channel_id)
+            await asyncio.sleep(2)
+
+        except Exception as ch_err:
+            failed += 1
+            failed_reasons.append(f"{ch.telegram_channel_id}: {str(ch_err)[:60]}")
+            logger.error("rdp_plans_send_failed", channel=ch.telegram_channel_id, error=str(ch_err))
+
+    has_img = "✅" if image_bytes else "❌ (text only)"
+    result_text = (
+        f"{'✅' if success > 0 else '⚠️'} *پست پلن‌های RDP {'ارسال شد' if success > 0 else 'ارسال نشد'}!*\n\n"
+        f"📡 موفق: `{success}` / `{len(all_channels)}` کانال\n"
+        f"🖼 تصویر: {has_img}"
+    )
+    if failed_reasons:
+        result_text += "\n\n❌ خطاها:\n" + "\n".join(f"`{r}`" for r in failed_reasons[:3])
+
+    await status_msg.edit_text(result_text, parse_mode="Markdown", reply_markup=back_kb())
+    logger.info("admin_rdp_plans_post_done", success=success, failed=failed)
 
 
 @router.message(Command("post_now"))
