@@ -120,7 +120,7 @@ async def _background_init() -> None:
     except Exception as e:
         _startup_errors.append(f"publisher: {e}")
 
-    await _timed(_setup_admin_bot(), "admin_bot", 30.0)
+    await _timed(_setup_admin_bot(), "admin_bot", 60.0)
 
     try:
         from app.services.channel.auto_poster import run_auto_poster
