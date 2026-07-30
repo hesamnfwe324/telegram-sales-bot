@@ -432,7 +432,14 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
     # ── Load banner image once ────────────────────────────────────────────────
     from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
     from app.services.content.rdp_plans_builder import build_rdp_plans_post
+    from telethon import Button
     import io
+
+    # Glass inline URL buttons for plans post
+    _plans_buttons = [
+        [Button.url("🛒  سفارش RDP", "https://t.me/vps24h")],
+        [Button.url("💬  تماس با ادمین", "https://t.me/vps24h")],
+    ]
 
     image_bytes = _read_local_file(_BANNER_REL_PATH)
 
@@ -456,10 +463,12 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
                 await client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=post_text, parse_mode="md",
+                    buttons=_plans_buttons,
                 )
             else:
                 await client.send_message(
                     ch.telegram_channel_id, post_text, parse_mode="md",
+                    buttons=_plans_buttons,
                 )
 
             success += 1
