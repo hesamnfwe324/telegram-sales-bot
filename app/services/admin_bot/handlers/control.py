@@ -99,6 +99,34 @@ async def ctrl_resume_posting(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "ctrl_reset_cooldowns")
+async def ctrl_reset_cooldowns(callback: CallbackQuery):
+    """
+    Reset all auto-poster cooldowns so every channel can post immediately
+    in the next cycle.  Use this when channels are stuck because cooldowns
+    were set erroneously (e.g. after the old bug that marked channels as
+    posted even when nothing was actually sent).
+    """
+    await callback.answer()
+    msg = await callback.message.answer("🔁 در حال پاک کردن cooldown‌ها...")
+    try:
+        from app.services.channel.auto_poster import reset_all_cooldowns
+        deleted = await reset_all_cooldowns()
+        await msg.edit_text(
+            f"✅ *Cooldowns reset!*\n\n"
+            f"🗑 {deleted} cooldown key(s) deleted from Redis.\n\n"
+            "کانال‌ها در چرخه بعدی auto-poster (حداکثر چند دقیقه دیگر) پست می‌فرستند.",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+    except Exception as e:
+        await msg.edit_text(
+            f"❌ خطا: `{str(e)[:200]}`",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+
+
 @router.callback_query(F.data == "ctrl_scan_channels")
 async def ctrl_scan_channels(callback: CallbackQuery):
     await callback.message.answer("📡 در حال اسکن کانال‌ها... لطفاً صبر کنید.")

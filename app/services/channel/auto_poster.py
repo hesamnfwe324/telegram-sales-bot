@@ -235,6 +235,28 @@ async def _post_rdp_result_to_channel(rdp_result: dict, channel: TelegramChannel
         await release_channel_lock(ch_id)
 
 
+async def reset_all_cooldowns() -> int:
+    """
+    Delete every autoposter:cooldown:* key from Redis.
+    Call this when channels are stuck because cooldowns were set erroneously
+    (e.g. by the old bug that marked channels as posted even when nothing was sent).
+    Returns the number of keys deleted.
+    """
+    try:
+        r = await get_redis()
+        pattern = "autoposter:cooldown:*"
+        keys = []
+        async for key in r.scan_iter(pattern):
+            keys.append(key)
+        if keys:
+            await r.delete(*keys)
+        logger.info("all_cooldowns_reset", deleted=len(keys))
+        return len(keys)
+    except Exception as e:
+        logger.error("reset_all_cooldowns_failed", error=str(e))
+        return 0
+
+
 async def _get_active_channels(account_id=None):
     """
     Return all active channels in randomised order.
