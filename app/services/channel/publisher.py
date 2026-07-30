@@ -36,7 +36,7 @@ _ADMIN_BUTTON_URL = "https://t.me/vps24h"
 
 # Inline keyboard — shown below every channel post
 def _admin_button():
-    return [[Button.url("📲 اتصال به ادمین", _ADMIN_BUTTON_URL)]]
+    return [[Button.url("📲 Contact Admin", _ADMIN_BUTTON_URL)]]
 
 # ── Admin signatures ─────────────────────────────────────────────────────
 ADMIN_SIGNATURES = [
