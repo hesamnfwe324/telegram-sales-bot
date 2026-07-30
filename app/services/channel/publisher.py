@@ -105,9 +105,7 @@ def _read_local_file(rel_path: str) -> bytes | None:
     """Read a file from disk relative to the repo root. Returns None on any error."""
     try:
         full_path = _REPO_ROOT / rel_path
-        data = full_path.read_bytes()
-        logger.info("local_file_read", path=str(full_path), size_kb=len(data) // 1024)
-        return data
+        return full_path.read_bytes()
     except Exception as e:
         logger.warning("local_file_read_failed", path=rel_path, error=str(e))
         return None
@@ -149,7 +147,7 @@ def _build_post_text(
 
 async def _refresh_channel_info(client, channel: TelegramChannel) -> None:
     try:
-        entity = await client.get_entity(channel.telegram_channel_id)
+        entity = await client.client.get_entity(channel.telegram_channel_id)
         changed = False
         username = getattr(entity, "username", None)
         if username and channel.username != username:
@@ -246,6 +244,67 @@ async def _send_with_flood_retry(send_fn, *args, max_retries: int = 3, **kwargs)
     raise RuntimeError(f"_send_with_flood_retry: exhausted {max_retries} retries")
 
 
+async def _get_channel_client(default_client, channel: TelegramChannel, session_string: str | None):
+    """
+    Return (client, is_temp) where:
+    - client      : a UserBotClient to use for this channel
+    - is_temp     : True if we created a temporary proxied client that must be
+                    disconnected after the send
+
+    If the channel has no proxy, or the proxy is dead, falls back to
+    default_client (is_temp=False).
+    """
+    if not channel.proxy or not channel.proxy.is_active or not channel.proxy.is_alive:
+        return default_client, False
+
+    if not session_string:
+        logger.warning(
+            "proxy_assigned_but_no_session_string",
+            channel_id=str(channel.id),
+        )
+        return default_client, False
+
+    from app.services.proxy.checker import build_telethon_proxy
+    from app.services.userbot.client import UserBotClient
+
+    proxy_tuple = build_telethon_proxy(channel.proxy)
+    if not proxy_tuple:
+        return default_client, False
+
+    try:
+        temp_client = UserBotClient(
+            phone="proxy_temp",
+            session_string=session_string,
+            account_id=None,
+            proxy=proxy_tuple,
+        )
+        connected = await temp_client.connect()
+        if connected:
+            logger.info(
+                "proxy_client_connected",
+                channel_id=str(channel.id),
+                proxy_host=channel.proxy.host,
+                proxy_port=channel.proxy.port,
+            )
+            return temp_client, True
+        else:
+            await temp_client.disconnect()
+            logger.warning(
+                "proxy_client_connect_failed_falling_back",
+                channel_id=str(channel.id),
+                proxy_host=channel.proxy.host,
+            )
+            return default_client, False
+    except Exception as exc:
+        logger.warning(
+            "proxy_client_exception_falling_back",
+            channel_id=str(channel.id),
+            proxy_host=channel.proxy.host,
+            error=str(exc),
+        )
+        return default_client, False
+
+
 async def publish_post(session: AsyncSession, post: Post) -> dict:
     if not _userbot_manager:
         logger.error("publisher_no_userbot_manager")
@@ -276,14 +335,32 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
             results[str(channel_id)] = {"status": "skipped", "reason": "no_content_for_language"}
             continue
 
+        temp_client = None
         try:
-            client = _userbot_manager.get_client(str(post.account_id))
-            if not (client and client.is_connected):
+            default_client = _userbot_manager.get_client(str(post.account_id))
+            if not (default_client and default_client.is_connected):
                 results[str(channel_id)] = {"status": "error", "reason": "no_connected_client"}
                 continue
 
             if not channel.username or not channel.display_name:
-                await _refresh_channel_info(client, channel)
+                await _refresh_channel_info(default_client, channel)
+
+            # ── Resolve per-channel proxy client ─────────────────────────────────
+            # eagerly load proxy relationship if it hasn't been loaded yet
+            if channel.proxy_id and channel.proxy is None:
+                from app.models.proxy import Proxy
+                proxy_result = await session.execute(
+                    select(Proxy).where(Proxy.id == channel.proxy_id)
+                )
+                channel.proxy = proxy_result.scalar_one_or_none()
+
+            client, is_temp = await _get_channel_client(
+                default_client,
+                channel,
+                default_client.session_string,
+            )
+            if is_temp:
+                temp_client = client
 
             media_sent = False
 
@@ -405,6 +482,14 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
         except Exception as e:
             logger.error("publish_failed", channel_id=str(channel_id), error=str(e))
             results[str(channel_id)] = {"status": "error", "reason": str(e)[:200]}
+        finally:
+            # Always disconnect temp proxy clients to free resources
+            if temp_client is not None:
+                try:
+                    await temp_client.disconnect()
+                except Exception:
+                    pass
+                temp_client = None
 
     published_count = sum(1 for r in results.values() if r.get("status") == "published")
     post.publish_log = results

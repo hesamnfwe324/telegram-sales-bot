@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.admin_bot.middlewares import AdminOnlyMiddleware
 from app.services.admin_bot.handlers import status, metrics, conversations, sales, publishing, logs, control, alerts, scanner
+from app.services.admin_bot.handlers import proxy as proxy_handler
 
 
 def _make_storage():
@@ -61,6 +62,7 @@ def get_dispatcher() -> Dispatcher:
         _dp.include_router(control.router)
         _dp.include_router(alerts.router)
         _dp.include_router(scanner.router)
+        _dp.include_router(proxy_handler.router)
 
     return _dp
 

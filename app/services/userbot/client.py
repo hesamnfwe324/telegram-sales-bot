@@ -9,9 +9,16 @@ logger = get_logger(__name__)
 
 
 class UserBotClient:
-    def __init__(self, phone: str, session_string: Optional[str] = None, account_id: str = None):
+    def __init__(
+        self,
+        phone: str,
+        session_string: Optional[str] = None,
+        account_id: str = None,
+        proxy: tuple = None,   # PySocks-format tuple for per-channel IP routing
+    ):
         self.phone = phone
         self.account_id = account_id
+        self._session_string = session_string  # keep for creating proxy-specific clients
         self._is_connected = False
 
         if session_string:
@@ -19,10 +26,7 @@ class UserBotClient:
         else:
             session = get_session_path(phone)
 
-        self._client = TelegramClient(
-            session,
-            settings.TELEGRAM_API_ID,
-            settings.TELEGRAM_API_HASH,
+        client_kwargs = dict(
             device_model="Linux Server",
             system_version="Ubuntu 22.04",
             app_version="1.0.0",
@@ -34,10 +38,24 @@ class UserBotClient:
             request_retries=1,
             flood_sleep_threshold=0,
         )
+        if proxy:
+            client_kwargs["proxy"] = proxy
+
+        self._client = TelegramClient(
+            session,
+            settings.TELEGRAM_API_ID,
+            settings.TELEGRAM_API_HASH,
+            **client_kwargs,
+        )
 
     @property
     def client(self) -> TelegramClient:
         return self._client
+
+    @property
+    def session_string(self) -> Optional[str]:
+        """Return the session string stored at construction time."""
+        return self._session_string
 
     async def connect(self) -> bool:
         try:

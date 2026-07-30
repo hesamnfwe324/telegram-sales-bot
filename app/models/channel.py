@@ -18,4 +18,10 @@ class TelegramChannel(Base, TimestampMixin):
     post_count: Mapped[int] = mapped_column(Integer, default=0)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
 
+    # Each channel gets its own proxy for IP diversity
+    proxy_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("proxies.id", ondelete="SET NULL"), nullable=True
+    )
+
     account = relationship("TelegramAccount", back_populates="channels")
+    proxy = relationship("Proxy", back_populates="channels", lazy="select")

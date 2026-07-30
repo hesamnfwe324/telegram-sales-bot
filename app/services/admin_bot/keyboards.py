@@ -13,6 +13,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     builder.button(text="⚙️ Control", callback_data="control")
     builder.button(text="🔔 Alerts", callback_data="alerts_menu")
     builder.button(text="🔍 IP Scanner", callback_data="scanner")
+    builder.button(text="🌐 Proxies", callback_data="proxy_menu")
     builder.adjust(2)
     return builder.as_markup()
 
@@ -76,6 +77,17 @@ def control_kb() -> InlineKeyboardMarkup:
     builder.button(text="🚀 پست فوری همه کانال‌ها", callback_data="ctrl_post_now")
     builder.button(text="🖥 پست سرور رایگان فوری", callback_data="ctrl_rdp_post_now")
     builder.button(text="🔙 Back", callback_data="main_menu")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def proxy_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Auto-Assign to Channels", callback_data="proxy_autoassign")
+    builder.button(text="🔍 Check All Liveness", callback_data="proxy_check_all")
+    builder.button(text="🗑 Remove Dead Proxies", callback_data="proxy_remove_dead")
+    builder.button(text="📋 Refresh List", callback_data="proxy_list")
+    builder.button(text="🔙 Main Menu", callback_data="main_menu")
     builder.adjust(2)
     return builder.as_markup()
 

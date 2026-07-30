@@ -31,6 +31,9 @@ PyJWT>=2.9.0
 bcrypt>=3.1.7,<4.0.0
 passlib[bcrypt]>=1.7.4
 
+# Proxy support (SOCKS5/HTTP per-channel routing)
+PySocks>=1.7.1
+
 # Utils
 langdetect>=1.0.9
 psutil>=6.0.0
