@@ -264,7 +264,10 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         parse_mode="Markdown",
     )
 
-    # ── Step 3: Find a connected userbot client ──────────────────────────────
+    # ── Step 3: Build per-account client map ────────────────────────────────
+    # BUGFIX: previously used a single client (accounts[0]) for ALL channels.
+    # Channels that belong to a different account were sent with the wrong
+    # userbot, causing them to silently fail every cycle.
     accounts = _userbot_manager.list_accounts()
     connected_accounts = [a for a in accounts if a["is_connected"]]
     if not connected_accounts:
@@ -275,7 +278,12 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
             reply_markup=back_kb(),
         )
         return
-    client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
+    # Map account_id (str) → its client; fall back to first connected account
+    client_map = {
+        str(a["account_id"]): _userbot_manager.get_client(a["account_id"])
+        for a in connected_accounts
+    }
+    fallback_client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
     # ── Step 4: Get active channels — filter per-channel cooldown ────────────
     # BUG FIX: previously checked only channels[0] cooldown and blocked ALL
@@ -383,16 +391,19 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
                 channel_username=ch.username,
             )
 
+            # Use the client that belongs to this channel's account
+            ch_client = client_map.get(str(ch.account_id), fallback_client)
+
             if image_bytes:
                 file_obj = io.BytesIO(image_bytes)
                 file_obj.name = "banner.jpg"
                 caption = _build_post_text(ch_content, ch.username, 1024)
-                await client.send_file(
+                await ch_client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=caption, parse_mode="md",
                 )
             else:
-                await client.send_message(
+                await ch_client.send_message(
                     ch.telegram_channel_id, ch_content, parse_mode="md",
                 )
 
@@ -619,3 +630,103 @@ async def cmd_scan_channels(message: Message):
         f"{channels_list}"
     )
     await message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
+
+
+@router.message(Command("channel_diag"))
+@router.callback_query(F.data == "ctrl_channel_diag")
+async def channel_diag(event: Message | CallbackQuery):
+    """
+    Show per-channel diagnostic: account connectivity, cooldown status,
+    and last publish result. Helps identify which channels never receive
+    posts and exactly why (wrong account, disconnected, cooldown, etc.).
+    """
+    msg = event if isinstance(event, Message) else event.message
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+    status_msg = await msg.answer("🔍 در حال بررسی وضعیت کانال‌ها...")
+
+    if not _userbot_manager:
+        await status_msg.edit_text("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
+        return
+
+    from app.services.channel.auto_poster import _get_active_channels, get_cooldown_remaining
+    from app.db.session import AsyncSessionLocal
+    from sqlalchemy import select, desc
+    from app.models.post import Post
+
+    # Build set of connected account_ids
+    connected_ids = {
+        str(a["account_id"])
+        for a in _userbot_manager.list_accounts()
+        if a["is_connected"]
+    }
+
+    channels = await _get_active_channels()
+    if not channels:
+        await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
+        return
+
+    # Fetch last publish log for each channel from recent posts
+    channel_last_result: dict[str, str] = {}
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Post)
+                .where(Post.status.in_(["published", "failed"]))
+                .order_by(desc(Post.published_at))
+                .limit(50)
+            )
+            recent_posts = result.scalars().all()
+            for post in recent_posts:
+                log = post.publish_log or {}
+                for ch_id_str, ch_result in log.items():
+                    if ch_id_str not in channel_last_result:
+                        channel_last_result[ch_id_str] = ch_result.get("status", "?")
+    except Exception:
+        pass
+
+    lines = []
+    problem_channels = []
+
+    for ch in channels:
+        ch_id = str(ch.id)
+        name = ch.display_name or ch.username or str(ch.telegram_channel_id)
+        acc_id = str(ch.account_id)
+        acc_connected = acc_id in connected_ids
+        cooldown = await get_cooldown_remaining(ch_id)
+        last = channel_last_result.get(ch_id, "—")
+
+        if not acc_connected:
+            icon = "🔴"
+            reason = "اکانت disconnect"
+            problem_channels.append(f"  ❌ {name} → {reason}")
+        elif cooldown > 0:
+            h, m = divmod(cooldown, 3600)
+            m = m // 60
+            icon = "⏳"
+            reason = f"cooldown {h}h{m:02d}m"
+        elif last in ("error", "skipped"):
+            icon = "⚠️"
+            reason = f"آخرین نتیجه: {last}"
+            problem_channels.append(f"  ⚠️ {name} → {reason}")
+        else:
+            icon = "✅"
+            reason = f"آخرین: {last}" if last != "—" else "ready"
+
+        lines.append(f"{icon} *{name[:30]}*\n    └ {reason}")
+
+    body = "\n".join(lines)
+    problems = ("\n\n🔎 *مشکل‌دار:*\n" + "\n".join(problem_channels)) if problem_channels else ""
+
+    # Split into pages if too long
+    MAX_CHARS = 3800
+    if len(body) > MAX_CHARS:
+        body = body[:MAX_CHARS] + "\n…(بقیه کانال‌ها حذف شد)"
+
+    text = (
+        f"📊 *وضعیت کانال‌ها* ({len(channels)} کانال)\n\n"
+        f"{body}"
+        f"{problems}"
+    )
+    await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=back_kb())
