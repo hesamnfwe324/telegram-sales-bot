@@ -13,6 +13,7 @@ from app.models.channel import TelegramChannel
 from app.models.post import Post
 from app.services.monitoring.metrics_collector import increment_daily_stat
 from app.core.logging import get_logger
+from telethon import Button
 
 logger = get_logger(__name__)
 
@@ -31,6 +32,11 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 
 # ── UPGRADE TEAM brand banner ─ always sent with every channel post ────────────────
 _BANNER_REL_PATH = "app/assets/upgrade_team_banner.jpg"
+_ADMIN_BUTTON_URL = "https://t.me/vps24h"
+
+# Inline keyboard — shown below every channel post
+def _admin_button():
+    return [[Button.url("📲 اتصال به ادمین", _ADMIN_BUTTON_URL)]]
 
 # ── Admin signatures ─────────────────────────────────────────────────────
 ADMIN_SIGNATURES = [
@@ -293,6 +299,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                       file_obj,
                       caption=caption,
                       parse_mode="md",
+                      buttons=_admin_button(),
                   )
                   results[str(channel_id)] = {
                       "status": "published",
@@ -339,6 +346,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                                   caption=caption,
                                   parse_mode="md",
                                   supports_streaming=True,
+                                  buttons=_admin_button(),
                               )
                               media_type = "video"
                           else:
@@ -349,6 +357,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                                   file_obj,
                                   caption=caption,
                                   parse_mode="md",
+                                  buttons=_admin_button(),
                               )
                               media_type = "image"
 
@@ -379,6 +388,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                       channel.telegram_channel_id,
                       text,
                       parse_mode="md",
+                      buttons=_admin_button(),
                   )
                   results[str(channel_id)] = {
                       "status": "published",
