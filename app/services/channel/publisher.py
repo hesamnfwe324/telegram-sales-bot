@@ -52,8 +52,7 @@ async def _add_contact_button(channel_id: str | int, message_id: int) -> None:
                     "message_id": message_id,
                     "reply_markup": {
                         "inline_keyboard": [
-                            [{"text": "🛒  سفارش RDP", "url": _ADMIN_URL}],
-                            [{"text": "📲 Contact Admin", "url": _ADMIN_URL}],
+                            [{"text": "📲 Contact Admin", "url": _ADMIN_URL}]
                         ]
                     },
                 },
