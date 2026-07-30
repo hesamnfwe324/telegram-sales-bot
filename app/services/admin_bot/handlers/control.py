@@ -288,9 +288,12 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         )
         return
 
-    # ── Step 5: Download image once (shared across channels) ─────────────────
+    # ── Step 5: Load banner image once (shared across channels) ─────────────
     from app.services.content.rdp_post_builder import build_rdp_post
-    from app.services.channel.publisher import _parse_image_urls, _download_with_fallbacks, _build_post_text
+    from app.services.channel.publisher import (
+        _parse_image_urls, _download_with_fallbacks, _build_post_text,
+        _read_local_file, _FILE_MARKER, _BANNER_REL_PATH, _admin_button,
+    )
 
     # Build a temporary post to get the image URL
     _tmp_content, rdp_image_urls = build_rdp_post(
@@ -300,13 +303,20 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         channel_username=None,
     )
 
-    image_bytes = None
-    if rdp_image_urls:
+    # Priority 1: always try the UPGRADE TEAM brand banner first (local file)
+    image_bytes = _read_local_file(_BANNER_REL_PATH)
+
+    # Priority 2: fall back to the post's own image_url (handles FILE: prefix)
+    if image_bytes is None and rdp_image_urls:
         try:
-            urls = _parse_image_urls(rdp_image_urls)
-            image_bytes = await asyncio.wait_for(
-                _download_with_fallbacks(urls), timeout=20.0
-            )
+            if rdp_image_urls.startswith(_FILE_MARKER):
+                rel_path = rdp_image_urls[len(_FILE_MARKER):]
+                image_bytes = _read_local_file(rel_path)
+            else:
+                urls = _parse_image_urls(rdp_image_urls)
+                image_bytes = await asyncio.wait_for(
+                    _download_with_fallbacks(urls), timeout=20.0
+                )
         except (asyncio.TimeoutError, Exception) as img_err:
             logger.warning("rdp_image_download_failed", error=str(img_err)[:80])
             image_bytes = None
@@ -347,15 +357,17 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
 
             if image_bytes:
                 file_obj = io.BytesIO(image_bytes)
-                file_obj.name = "rdp.jpg"
+                file_obj.name = "banner.jpg"
                 caption = _build_post_text(ch_content, ch.username, 1024)
                 await client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=caption, parse_mode="md",
+                    buttons=_admin_button(),
                 )
             else:
                 await client.send_message(
                     ch.telegram_channel_id, ch_content, parse_mode="md",
+                    buttons=_admin_button(),
                 )
 
             success += 1
