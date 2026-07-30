@@ -10,12 +10,12 @@ from telethon.tl.types import Channel
 
     async def discover_and_register_channels(userbot_manager, account_id: str) -> dict:
       """
-      فقط کانال‌هایی که اکانت توشون سازنده یا ادمین (با حق پست) هست رو پیدا می‌کنه.
-      - اگه توی DB نیست → اضافه می‌کنه (active=True)
-      - اگه توی DB هست ولی غیرفعاله → دوباره فعال می‌کنه
-      - بقیه کانال‌های DB که توی لیست ادمین نیستن → غیرفعال می‌مونن
-        ⚠️  SAFETY: اگه iter_dialogs هیچ کانالی برنگردوند (0 نتیجه)، هیچ کانالی
-            deactivate نمی‌شه — احتمالاً خطای شبکه یا session گذراست.
+      Only finds channels where the account is creator or admin with post rights.
+      - Not in DB -> add it (active=True)
+      - In DB but inactive -> reactivate
+      - DB channels no longer admin -> deactivate
+        SAFETY: if iter_dialogs returns 0 results, skip deactivation entirely
+                (likely a transient network/session error, not a real change).
       """
       client_wrapper = userbot_manager.get_client(account_id)
       if not client_wrapper or not client_wrapper.is_connected:
@@ -59,16 +59,15 @@ from telethon.tl.types import Channel
           logger.error("dialog_scan_failed", error=str(e))
           return {"error": str(e), "found": 0, "added": 0, "reactivated": 0, "channels": []}
 
-      # ── Safety guard ──────────────────────────────────────────────────────────
-      # اگه iter_dialogs صفر کانال ادمین برگردوند، کانال‌های قبلی رو deactivate نکن.
-      # این حالت معمولاً به خاطر خطای گذرای شبکه یا session موقتاً خراب اتفاق می‌افته.
-      # Deactivate کردن همه کانال‌ها وقتی scan نتیجه نداشته باشه، posting رو خاموش
-      # می‌کنه بدون هیچ دلیل واقعی.
+      # --- Safety guard ---------------------------------------------------
+      # If iter_dialogs returned 0 admin channels, do NOT deactivate existing
+      # records. This protects against transient network/session errors that
+      # return an empty dialog list wiping all channels and killing auto-posting.
       if not admin_channels:
           logger.warning(
               "scan_returned_zero_channels_skipping_deactivation",
               account_id=account_id,
-              note="iter_dialogs returned 0 admin channels — not deactivating existing records",
+              note="iter_dialogs returned 0 admin channels -- skipping deactivation of existing records",
           )
           return {"found": 0, "added": 0, "reactivated": 0, "channels": []}
 
@@ -79,7 +78,6 @@ from telethon.tl.types import Channel
       async with AsyncSessionLocal() as session:
           account_uuid = uuid.UUID(account_id)
 
-          # تمام کانال‌های این اکانت در DB
           existing_result = await session.execute(
               select(TelegramChannel).where(TelegramChannel.account_id == account_uuid)
           )
@@ -107,8 +105,8 @@ from telethon.tl.types import Channel
                   added += 1
                   logger.info("channel_registered", title=ch["title"])
 
-          # غیرفعال کردن کانال‌هایی که دیگه ادمین نیستیم
-          # (فقط وقتی scan نتیجه داشته باشه — بالاتر بررسی شد)
+          # Deactivate channels we are no longer admin of
+          # (only reached when scan returned at least one result -- see guard above)
           for tg_id, record in existing_records.items():
               if tg_id not in admin_tg_ids and record.is_active:
                   record.is_active = False
