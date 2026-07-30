@@ -410,7 +410,7 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
         await status_msg.edit_text("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
         return
 
-    # ── Get a connected userbot client ───────────────────────────────────────
+    # ── Build account_id → client map for all connected accounts ─────────────
     accounts = _userbot_manager.list_accounts()
     connected_accounts = [a for a in accounts if a["is_connected"]]
     if not connected_accounts:
@@ -420,7 +420,13 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
             reply_markup=back_kb(),
         )
         return
-    client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
+    # Map each account_id (str) → its Telethon client
+    client_map = {
+        str(a["account_id"]): _userbot_manager.get_client(a["account_id"])
+        for a in connected_accounts
+    }
+    # Fallback client — used only if a channel's account is not in client_map
+    fallback_client = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
     # ── Get active channels ───────────────────────────────────────────────────
     from app.services.channel.auto_poster import _get_active_channels
@@ -472,6 +478,8 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
     for ch in all_channels:
         ch_id = str(ch.id)
         try:
+            # Pick the client that owns this channel; fall back to any connected one
+            ch_client = client_map.get(str(ch.account_id), fallback_client)
             seed = random.randint(0, 9_999_999)
             post_text, _ = build_rdp_plans_post(
                 channel_username=ch.username,
@@ -481,12 +489,12 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
             if image_bytes:
                 file_obj = io.BytesIO(image_bytes)
                 file_obj.name = "banner.jpg"
-                msg = await client.send_file(
+                msg = await ch_client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=post_text, parse_mode="md",
                 )
             else:
-                msg = await client.send_message(
+                msg = await ch_client.send_message(
                     ch.telegram_channel_id, post_text, parse_mode="md",
                 )
             await _add_plans_buttons(ch.telegram_channel_id, msg.id)
