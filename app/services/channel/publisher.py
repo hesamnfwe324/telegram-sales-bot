@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 import httpx
+from telethon import Button
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.channel import TelegramChannel
@@ -32,8 +33,13 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 # ── UPGRADE TEAM brand banner ─ always sent with every channel post ────────────────
 _BANNER_REL_PATH = "app/assets/upgrade_team_banner.jpg"
 
-# Contact link appended to every post (userbots cannot send inline keyboards)
-_CONTACT_LINK = "\n📲 [Contact Admin](https://t.me/vps24h)"
+# Admin contact URL — used as an inline URL button (Telethon supports URL buttons from userbots)
+_ADMIN_URL = "https://t.me/vps24h"
+
+
+def _admin_contact_buttons():
+    """Return a single inline URL button row for every channel post."""
+    return [[Button.url("📲 Contact Admin", _ADMIN_URL)]]
 
 # ── Admin signatures ─────────────────────────────────────────────────────
 ADMIN_SIGNATURES = [
@@ -130,16 +136,13 @@ def _build_post_text(
     channel_username: str | None,
     max_length: int,
 ) -> str:
-    contact = _CONTACT_LINK
-    # RDP posts already contain a complete footer (@VPS24H) — don't duplicate sig,
-    # but still append the contact link
+    # RDP posts already contain a complete footer (@VPS24H) — don't duplicate sig
     if "@VPS24H" in content:
-        base = content[: max_length - len(contact)]
-        return base + contact
+        return content[:max_length]
     body, hashtags = _split_body_and_hashtags(content)
     channel_tag = _get_channel_tag(channel_username) if channel_username else ""
     admin_sig = _get_admin_signature()
-    footer = hashtags + channel_tag + admin_sig + contact
+    footer = hashtags + channel_tag + admin_sig
     available = max(max_length - len(footer), 100)
     truncated_body = _truncate_body(body, available)
     return truncated_body + footer
@@ -376,6 +379,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                     file_obj,
                     caption=caption,
                     parse_mode="md",
+                    buttons=_admin_contact_buttons(),
                 )
                 results[str(channel_id)] = {
                     "status": "published",
@@ -462,6 +466,7 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                     channel.telegram_channel_id,
                     text,
                     parse_mode="md",
+                    buttons=_admin_contact_buttons(),
                 )
                 results[str(channel_id)] = {
                     "status": "published",
