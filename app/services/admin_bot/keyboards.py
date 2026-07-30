@@ -76,6 +76,7 @@ def control_kb() -> InlineKeyboardMarkup:
     builder.button(text="📡 Scan Channels", callback_data="ctrl_scan_channels")
     builder.button(text="🚀 پست فوری همه کانال‌ها", callback_data="ctrl_post_now")
     builder.button(text="🖥 پست سرور رایگان فوری", callback_data="ctrl_rdp_post_now")
+    builder.button(text="📋 پست پلن‌های RDP", callback_data="ctrl_rdp_plans_post")
     builder.button(text="🔙 Back", callback_data="main_menu")
     builder.adjust(2)
     return builder.as_markup()
