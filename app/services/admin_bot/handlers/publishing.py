@@ -158,8 +158,9 @@ async def receive_topic(message: Message, state: FSMContext):
         content = await generate_post(content_type, topic, language="en", include_hashtags=True)
     except Exception as e:
         logger.error("admin_post_generation_failed", error=str(e))
+        err_detail = str(e)[:250] if str(e) else "Unknown error"
         await thinking_msg.edit_text(
-            "❌ *Generation failed.*\n\nPlease check your AI API key and try again.",
+            f"❌ *Generation failed*\n\n```\n{err_detail}\n```\n_Check GROQ\_API\_KEY on Render._",
             parse_mode="Markdown",
             reply_markup=back_kb(),
         )
@@ -168,7 +169,16 @@ async def receive_topic(message: Message, state: FSMContext):
     await state.update_data(topic=topic, content=content, image_url=None)
     await state.set_state(PostStates.reviewing_post)
     await thinking_msg.delete()
-    await _send_preview(message, state, content, image_url=None)
+    try:
+        await _send_preview(message, state, content, image_url=None)
+    except Exception as preview_err:
+        logger.error("admin_preview_send_failed", error=str(preview_err))
+        await message.answer(
+            f"❌ *Preview render failed*\n\n`{str(preview_err)[:250]}`",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        await state.clear()
 
 
 async def _send_preview(
@@ -181,20 +191,32 @@ async def _send_preview(
     content_type = data.get("content_type", "educational")
     type_label = TYPE_LABELS.get(content_type, content_type)
     topic = data.get("topic", "")
+    safe_topic = topic.replace("_", "\\_")
     image_note = "🖼 *Image attached*" if image_url else "📄 *Text only* _(you can add an image below)_"
 
     header = (
         f"👁 *Post Preview*\n"
-        f"Type: {type_label}  |  Topic: _{topic}_\n"
+        f"Type: {type_label}  |  Topic: _{safe_topic}_\n"
         f"{image_note}\n"
         f"{'─' * 30}\n\n"
     )
 
-    await target.answer(
-        header + content,
-        parse_mode="Markdown",
-        reply_markup=post_preview_kb(has_image=bool(image_url)),
-    )
+    try:
+        await target.answer(
+            header + content,
+            parse_mode="Markdown",
+            reply_markup=post_preview_kb(has_image=bool(image_url)),
+        )
+    except Exception:
+        plain_header = (
+            f"👁 Post Preview\n"
+            f"Type: {type_label}  |  Topic: {topic}\n"
+            f"{'─' * 30}\n\n"
+        )
+        await target.answer(
+            plain_header + content,
+            reply_markup=post_preview_kb(has_image=bool(image_url)),
+        )
 
 
 # ─── Step 3: Actions on Preview ─────────────────────────────────────────────
@@ -226,7 +248,16 @@ async def regenerate_post(callback: CallbackQuery, state: FSMContext):
     image_url = data.get("image_url")
     await state.update_data(content=content)
     await callback.message.delete()
-    await _send_preview(callback.message, state, content, image_url=image_url)
+    try:
+        await _send_preview(callback.message, state, content, image_url=image_url)
+    except Exception as preview_err:
+        logger.error("admin_regen_preview_failed", error=str(preview_err))
+        await callback.message.answer(
+            f"❌ *Preview render failed*\n\n`{str(preview_err)[:250]}`",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        await state.clear()
 
 
 @router.callback_query(F.data == "post_add_image", PostStates.reviewing_post)
