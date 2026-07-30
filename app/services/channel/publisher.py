@@ -7,7 +7,6 @@ import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 import httpx
-from telethon import Button
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.channel import TelegramChannel
@@ -33,13 +32,36 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 # ── UPGRADE TEAM brand banner ─ always sent with every channel post ────────────────
 _BANNER_REL_PATH = "app/assets/upgrade_team_banner.jpg"
 
-# Admin contact URL — used as an inline URL button (Telethon supports URL buttons from userbots)
+# Admin URL for inline URL buttons (added via Bot API after userbot posts)
 _ADMIN_URL = "https://t.me/vps24h"
 
 
-def _admin_contact_buttons():
-    """Return a single inline URL button row for every channel post."""
-    return [[Button.url("📲 Contact Admin", _ADMIN_URL)]]
+async def _add_contact_button(channel_id: str | int, message_id: int) -> None:
+    """Edit the just-sent channel post to add a Contact Admin inline URL button.
+    Requires the admin bot to have 'Edit Messages' admin rights in the channel."""
+    from app.core.config import settings
+    bot_token = settings.ADMIN_BOT_TOKEN
+    if not bot_token:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=8) as http:
+            resp = await http.post(
+                f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup",
+                json={
+                    "chat_id": channel_id,
+                    "message_id": message_id,
+                    "reply_markup": {
+                        "inline_keyboard": [
+                            [{"text": "📲 Contact Admin", "url": _ADMIN_URL}]
+                        ]
+                    },
+                },
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.warning("add_contact_button_failed", channel_id=str(channel_id), reason=data.get("description"))
+    except Exception as exc:
+        logger.warning("add_contact_button_exception", channel_id=str(channel_id), error=str(exc))
 
 # ── Admin signatures ─────────────────────────────────────────────────────
 ADMIN_SIGNATURES = [
@@ -379,8 +401,8 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                     file_obj,
                     caption=caption,
                     parse_mode="md",
-                    buttons=_admin_contact_buttons(),
                 )
+                await _add_contact_button(channel.telegram_channel_id, msg.id)
                 results[str(channel_id)] = {
                     "status": "published",
                     "message_id": msg.id,
@@ -466,8 +488,8 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                     channel.telegram_channel_id,
                     text,
                     parse_mode="md",
-                    buttons=_admin_contact_buttons(),
                 )
+                await _add_contact_button(channel.telegram_channel_id, msg.id)
                 results[str(channel_id)] = {
                     "status": "published",
                     "message_id": msg.id,
