@@ -1,8 +1,8 @@
 """
 RDP Plans Post Builder — premium pricing-card layout for Telegram channels.
 
-Userbots cannot send inline keyboards, so visual appeal comes entirely from
-text formatting. Each plan is rendered as a bordered card with specs + price.
+Inline URL buttons are attached by the publisher/handler. Each plan is rendered
+as a bordered card with specs + price.
 Returns (post_text, image_url) — image reuses the UPGRADE TEAM brand banner.
 """
 import random as _random
@@ -129,8 +129,6 @@ def build_rdp_plans_post(
         fmt = _CHANNEL_TAG_FORMATS[seed % len(_CHANNEL_TAG_FORMATS)]
         tag_line = fmt.format(u=u)
 
-    contact = "📲 [Order Now](https://t.me/vps24h)"
-
     text = (
         f"{headline}\n"
         f"{'═' * 36}\n\n"
@@ -143,8 +141,7 @@ def build_rdp_plans_post(
         "✅  Full RDP Access  ·  Root Admin\n"
         "✅  Windows Server 2019 / 2022\n"
         "✅  Instant Delivery  ·  24/7 Support\n"
-        "✅  Monthly Billing  ·  Easy Renewal\n\n"
-        f"{contact}\n"
+        "✅  Monthly Billing  ·  Easy Renewal\n"
     )
 
     if tag_line:
