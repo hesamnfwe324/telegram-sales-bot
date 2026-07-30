@@ -287,116 +287,116 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
 
             media_sent = False
 
-              # ── UPGRADE TEAM banner — always sent with every channel post ─────────
-              banner_bytes = _read_local_file(_BANNER_REL_PATH)
-              if banner_bytes:
-                  caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
-                  file_obj = io.BytesIO(banner_bytes)
-                  file_obj.name = "upgrade_team_banner.jpg"
-                  msg = await _send_with_flood_retry(
-                      client.send_file,
-                      channel.telegram_channel_id,
-                      file_obj,
-                      caption=caption,
-                      parse_mode="md",
-                      buttons=_admin_button(),
-                  )
-                  results[str(channel_id)] = {
-                      "status": "published",
-                      "message_id": msg.id,
-                      "has_media": True,
-                      "media_type": "image",
-                  }
-                  media_sent = True
-                  logger.info(
-                      "post_published_with_banner",
-                      channel_id=str(channel_id),
-                      msg_id=msg.id,
-                      size_kb=len(banner_bytes) // 1024,
-                  )
-              else:
-                  # Banner file missing — fall back to post's own image_url
-                  logger.warning(
-                      "banner_not_found_falling_back_to_original_media",
-                      path=_BANNER_REL_PATH,
-                      channel_id=str(channel_id),
-                  )
-                  if post.image_url:
-                      if post.image_url.startswith(_FILE_MARKER):
-                          rel_path = post.image_url[len(_FILE_MARKER):]
-                          media_bytes = _read_local_file(rel_path)
-                      else:
-                          image_urls = _parse_image_urls(post.image_url)
-                          media_bytes = await _download_with_fallbacks(image_urls)
+            # ── UPGRADE TEAM banner — always sent with every channel post ─────────
+            banner_bytes = _read_local_file(_BANNER_REL_PATH)
+            if banner_bytes:
+                caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
+                file_obj = io.BytesIO(banner_bytes)
+                file_obj.name = "upgrade_team_banner.jpg"
+                msg = await _send_with_flood_retry(
+                    client.send_file,
+                    channel.telegram_channel_id,
+                    file_obj,
+                    caption=caption,
+                    parse_mode="md",
+                    buttons=_admin_button(),
+                )
+                results[str(channel_id)] = {
+                    "status": "published",
+                    "message_id": msg.id,
+                    "has_media": True,
+                    "media_type": "image",
+                }
+                media_sent = True
+                logger.info(
+                    "post_published_with_banner",
+                    channel_id=str(channel_id),
+                    msg_id=msg.id,
+                    size_kb=len(banner_bytes) // 1024,
+                )
+            else:
+                # Banner missing — fall back to post's own image_url
+                logger.warning(
+                    "banner_not_found_falling_back_to_original_media",
+                    path=_BANNER_REL_PATH,
+                    channel_id=str(channel_id),
+                )
+                if post.image_url:
+                    if post.image_url.startswith(_FILE_MARKER):
+                        rel_path = post.image_url[len(_FILE_MARKER):]
+                        media_bytes = _read_local_file(rel_path)
+                    else:
+                        image_urls = _parse_image_urls(post.image_url)
+                        media_bytes = await _download_with_fallbacks(image_urls)
 
-                      if media_bytes:
-                          caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
-                          is_video = (
-                              False if post.image_url.startswith(_FILE_MARKER)
-                              else _is_video_url(image_urls[0])
-                          )
-                          file_obj = io.BytesIO(media_bytes)
+                    if media_bytes:
+                        caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
+                        is_video = (
+                            False if post.image_url.startswith(_FILE_MARKER)
+                            else _is_video_url(image_urls[0])
+                        )
+                        file_obj = io.BytesIO(media_bytes)
 
-                          if is_video:
-                              file_obj.name = "video.mp4"
-                              msg = await _send_with_flood_retry(
-                                  client.send_file,
-                                  channel.telegram_channel_id,
-                                  file_obj,
-                                  caption=caption,
-                                  parse_mode="md",
-                                  supports_streaming=True,
-                                  buttons=_admin_button(),
-                              )
-                              media_type = "video"
-                          else:
-                              file_obj.name = "image.jpg"
-                              msg = await _send_with_flood_retry(
-                                  client.send_file,
-                                  channel.telegram_channel_id,
-                                  file_obj,
-                                  caption=caption,
-                                  parse_mode="md",
-                                  buttons=_admin_button(),
-                              )
-                              media_type = "image"
+                        if is_video:
+                            file_obj.name = "video.mp4"
+                            msg = await _send_with_flood_retry(
+                                client.send_file,
+                                channel.telegram_channel_id,
+                                file_obj,
+                                caption=caption,
+                                parse_mode="md",
+                                supports_streaming=True,
+                                buttons=_admin_button(),
+                            )
+                            media_type = "video"
+                        else:
+                            file_obj.name = "image.jpg"
+                            msg = await _send_with_flood_retry(
+                                client.send_file,
+                                channel.telegram_channel_id,
+                                file_obj,
+                                caption=caption,
+                                parse_mode="md",
+                                buttons=_admin_button(),
+                            )
+                            media_type = "image"
 
-                          results[str(channel_id)] = {
-                              "status": "published",
-                              "message_id": msg.id,
-                              "has_media": True,
-                              "media_type": media_type,
-                          }
-                          media_sent = True
-                          logger.info(
-                              "post_published_with_media",
-                              channel_id=str(channel_id),
-                              msg_id=msg.id,
-                              media_type=media_type,
-                              size_kb=len(media_bytes) // 1024,
-                          )
-                      else:
-                          logger.warning(
-                              "all_media_downloads_failed_falling_back_to_text",
-                              channel_id=str(channel_id),
-                          )
+                        results[str(channel_id)] = {
+                            "status": "published",
+                            "message_id": msg.id,
+                            "has_media": True,
+                            "media_type": media_type,
+                        }
+                        media_sent = True
+                        logger.info(
+                            "post_published_with_media",
+                            channel_id=str(channel_id),
+                            msg_id=msg.id,
+                            media_type=media_type,
+                            size_kb=len(media_bytes) // 1024,
+                        )
+                    else:
+                        logger.warning(
+                            "all_media_downloads_failed_falling_back_to_text",
+                            channel_id=str(channel_id),
+                        )
 
-              if not media_sent:
-                  text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
-                  msg = await _send_with_flood_retry(
-                      client.send_message,
-                      channel.telegram_channel_id,
-                      text,
-                      parse_mode="md",
-                      buttons=_admin_button(),
-                  )
-                  results[str(channel_id)] = {
-                      "status": "published",
-                      "message_id": msg.id,
-                      "has_media": False,
-                      "media_type": None,
-                  }
-                  logger.info("post_published_text_only", channel_id=str(channel_id), msg_id=msg.id)
+            if not media_sent:
+                text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
+                msg = await _send_with_flood_retry(
+                    client.send_message,
+                    channel.telegram_channel_id,
+                    text,
+                    parse_mode="md",
+                    buttons=_admin_button(),
+                )
+                results[str(channel_id)] = {
+                    "status": "published",
+                    "message_id": msg.id,
+                    "has_media": False,
+                    "media_type": None,
+                }
+                logger.info("post_published_text_only", channel_id=str(channel_id), msg_id=msg.id)
 
             channel.post_count = (channel.post_count or 0) + 1
             await increment_daily_stat("posts_published")
