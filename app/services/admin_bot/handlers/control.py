@@ -432,14 +432,35 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
     # ── Load banner image once ────────────────────────────────────────────────
     from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
     from app.services.content.rdp_plans_builder import build_rdp_plans_post
-    from telethon import Button
+    from app.core.config import settings
+    import httpx
     import io
 
-    # Glass inline URL buttons for plans post
-    _plans_buttons = [
-        [Button.url("🛒  سفارش RDP", "https://t.me/vps24h")],
-        [Button.url("💬  تماس با ادمین", "https://t.me/vps24h")],
-    ]
+    async def _add_plans_buttons(channel_id, message_id):
+        """Edit the plans post to add glass inline URL buttons via admin bot."""
+        bot_token = settings.ADMIN_BOT_TOKEN
+        if not bot_token:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=8) as http:
+                resp = await http.post(
+                    f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup",
+                    json={
+                        "chat_id": channel_id,
+                        "message_id": message_id,
+                        "reply_markup": {
+                            "inline_keyboard": [
+                                [{"text": "🛒  سفارش RDP", "url": "https://t.me/vps24h"}],
+                                [{"text": "💬  تماس با ادمین", "url": "https://t.me/vps24h"}],
+                            ]
+                        },
+                    },
+                )
+                data = resp.json()
+                if not data.get("ok"):
+                    logger.warning("add_plans_buttons_failed", channel=str(channel_id), reason=data.get("description"))
+        except Exception as exc:
+            logger.warning("add_plans_buttons_exception", error=str(exc))
 
     image_bytes = _read_local_file(_BANNER_REL_PATH)
 
@@ -460,16 +481,15 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
             if image_bytes:
                 file_obj = io.BytesIO(image_bytes)
                 file_obj.name = "banner.jpg"
-                await client.send_file(
+                msg = await client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=post_text, parse_mode="md",
-                    buttons=_plans_buttons,
                 )
             else:
-                await client.send_message(
+                msg = await client.send_message(
                     ch.telegram_channel_id, post_text, parse_mode="md",
-                    buttons=_plans_buttons,
                 )
+            await _add_plans_buttons(ch.telegram_channel_id, msg.id)
 
             success += 1
             logger.info("rdp_plans_sent_to_channel", channel=ch.telegram_channel_id)
