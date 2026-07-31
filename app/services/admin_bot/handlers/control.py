@@ -280,6 +280,7 @@ async def _bg_rdp_post_now(status_msg) -> None:
     try:
         _step = "import"
         import io
+        import gc
         from telethon.errors import FloodWaitError
         from app.services.scanner.rdp_scanner import scan_for_rdp
         from app.services.content.rdp_post_builder import build_rdp_post
@@ -517,7 +518,11 @@ async def _bg_rdp_plans_post(status_msg) -> None:
                 if img:
                     f = io.BytesIO(img)
                     f.name = "banner.jpg"
-                    await tg.send_file(target, f, caption=text, parse_mode="md", buttons=btns)
+                    try:
+                        await tg.send_file(target, f, caption=text, parse_mode="md", buttons=btns)
+                    finally:
+                        f.close()
+                        del f
                 else:
                     await tg.send_message(target, text, parse_mode="md", buttons=btns)
 
@@ -525,12 +530,15 @@ async def _bg_rdp_plans_post(status_msg) -> None:
                 try:
                     await asyncio.wait_for(_send_plans(), timeout=90)
                 except FloodWaitError as fw:
+                    if fw.seconds > 30:
+                        raise Exception("FloodWait " + str(fw.seconds) + "s > 30s — skipping channel")
                     await asyncio.sleep(fw.seconds + 3)
                     await asyncio.wait_for(_send_plans(), timeout=90)
                 except asyncio.TimeoutError:
                     raise Exception("send timeout (>90s) — Telegram unreachable or file too large")
 
                 success += 1
+                gc.collect()
                 logger.info("rdp_plans_sent", channel=ch.telegram_channel_id)
                 await asyncio.sleep(3)
 
@@ -551,7 +559,7 @@ async def _bg_rdp_plans_post(status_msg) -> None:
         await status_msg.edit_text(result_text, parse_mode="Markdown", reply_markup=back_kb())
         logger.info("admin_rdp_plans_post_done", success=success, failed=failed)
 
-    except Exception as e:
+    except BaseException as e:
         logger.error("bg_rdp_plans_post_crashed", step=_step, error=str(e))
         try:
             await status_msg.edit_text(
