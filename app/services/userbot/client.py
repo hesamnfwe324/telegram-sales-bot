@@ -34,7 +34,7 @@ class UserBotClient:
             system_lang_code="en",
             connection_retries=None,
             retry_delay=1,
-            timeout=10,
+            timeout=60,
             request_retries=1,
             flood_sleep_threshold=0,
         )
