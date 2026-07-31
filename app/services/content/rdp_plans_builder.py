@@ -51,7 +51,7 @@ RDP_PLANS = [
     },
 ]
 
-_BANNER_IMAGE = "FILE:app/assets/upgrade_team_banner.jpg"
+_BANNER_IMAGE = ""  # no image — text-only post
 
 _CHANNEL_TAG_FORMATS = [
     "📢 @{u} — Join Our Channel",

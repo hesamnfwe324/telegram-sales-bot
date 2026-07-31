@@ -464,7 +464,6 @@ async def _bg_rdp_plans_post(status_msg) -> None:
         from telethon.errors import FloodWaitError
         from telethon.tl.custom import Button as TelethonButton
         from app.services.channel.auto_poster import _get_active_channels
-        from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
         from app.services.content.rdp_plans_builder import build_rdp_plans_post
 
         _step = "list_accounts"
@@ -492,7 +491,7 @@ async def _bg_rdp_plans_post(status_msg) -> None:
             return
 
         _step = "load_image"
-        image_bytes = _read_local_file(_BANNER_REL_PATH)
+        image_bytes = None  # text-only — no banner image for plans post
         plans_buttons = [
             [TelethonButton.url("🛒  سفارش RDP", "https://t.me/vps24h")],
             [TelethonButton.url("💬  تماس با ادمین", "https://t.me/vps24h")],
