@@ -406,3 +406,83 @@ async def send_post_now(callback: CallbackQuery, state: FSMContext):
     await status_msg.edit_text(summary, parse_mode="Markdown", reply_markup=publishing_menu_kb())
     await state.clear()
     logger.info("admin_post_published", published=published, total=len(channels), has_image=bool(image_url))
+
+
+    # ─── Flash Sale ─────────────────────────────────────────────────────────────
+
+    @router.callback_query(F.data == "flash_sale")
+    async def handle_flash_sale(callback: CallbackQuery, state: FSMContext):
+      await state.clear()
+      status_msg = await callback.message.edit_text(
+          "\u26a1 *Building Flash Sale post...*",
+          parse_mode="Markdown",
+      )
+      await callback.answer()
+
+      try:
+          from app.services.content.flash_sale_builder import build_flash_sale_post
+
+          async with AsyncSessionLocal() as session:
+              channels_q = await session.execute(
+                  select(TelegramChannel).where(TelegramChannel.is_active == True)
+              )
+              channels = channels_q.scalars().all()
+
+              accounts_q = await session.execute(
+                  select(TelegramAccount).where(TelegramAccount.is_active == True).limit(1)
+              )
+              accounts = accounts_q.scalars().all()
+
+              if not channels or not accounts:
+                  await status_msg.edit_text(
+                      "\u274c No active channels or accounts found.",
+                      reply_markup=back_kb(),
+                  )
+                  return
+
+              account = accounts[0]
+              channel_ids = [str(ch.id) for ch in channels]
+              ch_username = channels[0].username if channels else None
+
+              content, image_url = build_flash_sale_post(
+                  channel_username=ch_username,
+                  duration_hours=2,
+              )
+
+              post = Post(
+                  account_id=account.id,
+                  content=content,
+                  content_type="promotion",
+                  languages={"en": content},
+                  channel_ids=channel_ids,
+                  image_url=image_url or None,
+                  status="publishing",
+              )
+              session.add(post)
+              await session.commit()
+              await session.refresh(post)
+
+              from app.services.channel.publisher import publish_post as do_publish
+              pub_results = await do_publish(session, post)
+              await session.commit()
+
+          published = sum(1 for r in pub_results.values() if r.get("status") == "published")
+          failed_count = sum(1 for r in pub_results.values() if r.get("status") == "error")
+
+          await status_msg.edit_text(
+              "\u26a1 *Flash Sale Posted!*\n\n"
+              + "\U0001f4e1 Channels: " + str(len(channels)) + "\n"
+              + "\u2705 Published: `" + str(published) + "`\n"
+              + "\u274c Failed: `" + str(failed_count) + "`\n",
+              parse_mode="Markdown",
+              reply_markup=publishing_menu_kb(),
+          )
+          logger.info("flash_sale_published", published=published, total=len(channels))
+
+      except Exception as e:
+          logger.error("flash_sale_handler_error", error=str(e))
+          await status_msg.edit_text(
+              "Error: " + str(e)[:200],
+              reply_markup=back_kb(),
+          )
+    
