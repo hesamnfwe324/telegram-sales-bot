@@ -276,20 +276,23 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
 
 async def _bg_rdp_post_now(status_msg) -> None:
     """Background task: scan for RDP server and post to all channels."""
-    import io
-    from telethon.errors import FloodWaitError
-    from app.services.scanner.rdp_scanner import scan_for_rdp
-    from app.services.content.rdp_post_builder import build_rdp_post
-    from app.services.channel.publisher import (
-        _parse_image_urls, _download_with_fallbacks, _build_post_text,
-        _read_local_file, _FILE_MARKER, _BANNER_REL_PATH,
-    )
-    from app.services.channel.auto_poster import _get_active_channels, mark_channel_posted, _toggle_post_mode
-
+    _step = "شروع"
     try:
+        _step = "import"
+        import io
+        from telethon.errors import FloodWaitError
+        from app.services.scanner.rdp_scanner import scan_for_rdp
+        from app.services.content.rdp_post_builder import build_rdp_post
+        from app.services.channel.publisher import (
+            _parse_image_urls, _download_with_fallbacks, _build_post_text,
+            _read_local_file, _FILE_MARKER, _BANNER_REL_PATH,
+        )
+        from app.services.channel.auto_poster import _get_active_channels, mark_channel_posted, _toggle_post_mode
+
         # Step 1: Scan for RDP
+        _step = "scan_rdp"
         try:
-            rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=50.0)
+            rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=55.0)
         except asyncio.TimeoutError:
             rdp_result = None
 
@@ -300,14 +303,15 @@ async def _bg_rdp_post_now(status_msg) -> None:
             )
             return
 
-        country_flag = rdp_result["country_flag"]
-        country_name = rdp_result["country_name"]
         ip = rdp_result["ip"]
         port = rdp_result["port"]
         username = rdp_result["username"]
         password = rdp_result["password"]
+        country_flag = rdp_result["country_flag"]
+        country_name = rdp_result["country_name"]
 
-        # Step 2: Show found server
+        # Step 2: Show found server immediately
+        _step = "show_server"
         await status_msg.edit_text(
             f"✅ *سرور پیدا شد!* {country_flag} {country_name}\n\n"
             f"🔗 IP: `{ip}`\n🔌 Port: `{port}`\n"
@@ -316,7 +320,8 @@ async def _bg_rdp_post_now(status_msg) -> None:
             parse_mode="Markdown",
         )
 
-        # Step 3: Client map
+        # Step 3: Check connected accounts
+        _step = "list_accounts"
         accounts = _userbot_manager.list_accounts()
         connected_accounts = [a for a in accounts if a["is_connected"]]
         if not connected_accounts:
@@ -326,7 +331,8 @@ async def _bg_rdp_post_now(status_msg) -> None:
             )
             return
 
-        # .client gives the underlying raw TelegramClient (Telethon)
+        # Build {account_id_str: UserBotClient}
+        _step = "build_client_map"
         client_map = {
             str(a["account_id"]): _userbot_manager.get_client(a["account_id"])
             for a in connected_accounts
@@ -334,12 +340,14 @@ async def _bg_rdp_post_now(status_msg) -> None:
         fallback_ub = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
         # Step 4: Active channels
+        _step = "get_channels"
         all_channels = await _get_active_channels()
         if not all_channels:
             await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
             return
 
         # Step 5: Banner image
+        _step = "load_image"
         _tmp, rdp_image_urls = build_rdp_post(
             ip=ip, port=port, username=username, password=password,
             country_name=country_name, country_flag=country_flag,
@@ -356,7 +364,8 @@ async def _bg_rdp_post_now(status_msg) -> None:
             except Exception as img_err:
                 logger.warning("rdp_image_download_failed", error=str(img_err)[:80])
 
-        # Step 6: Send to every channel — use .client for the raw Telethon TelegramClient
+        # Step 6: Send to every channel
+        _step = "send_channels"
         success, failed = 0, 0
         failed_reasons = []
 
@@ -365,8 +374,10 @@ async def _bg_rdp_post_now(status_msg) -> None:
             ub = client_map.get(str(ch.account_id)) or fallback_ub
             if ub is None:
                 failed += 1
+                failed_reasons.append(f"{ch.telegram_channel_id}: no client")
                 continue
-            tg = ub.client  # raw Telethon TelegramClient
+            # ub is UserBotClient; ub.client is the raw Telethon TelegramClient
+            tg = ub.client
 
             try:
                 seed = random.randint(100_000, 99_999_999)
@@ -416,10 +427,10 @@ async def _bg_rdp_post_now(status_msg) -> None:
         logger.info("admin_rdp_post_done", success=success, failed=failed, ip=ip)
 
     except Exception as e:
-        logger.error("bg_rdp_post_now_crashed", error=str(e))
+        logger.error("bg_rdp_post_now_crashed", step=_step, error=str(e))
         try:
             await status_msg.edit_text(
-                f"❌ *خطای غیرمنتظره:*\n`{str(e)[:300]}`",
+                f"❌ *خطا در مرحله `{_step}`:*\n`{str(e)[:300]}`",
                 parse_mode="Markdown", reply_markup=back_kb(),
             )
         except Exception:
@@ -444,14 +455,17 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
 
 async def _bg_rdp_plans_post(status_msg) -> None:
     """Background task: send RDP plans post to all channels."""
-    import io
-    from telethon.errors import FloodWaitError
-    from telethon.tl.custom import Button as TelethonButton
-    from app.services.channel.auto_poster import _get_active_channels
-    from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
-    from app.services.content.rdp_plans_builder import build_rdp_plans_post
-
+    _step = "شروع"
     try:
+        _step = "import"
+        import io
+        from telethon.errors import FloodWaitError
+        from telethon.tl.custom import Button as TelethonButton
+        from app.services.channel.auto_poster import _get_active_channels
+        from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
+        from app.services.content.rdp_plans_builder import build_rdp_plans_post
+
+        _step = "list_accounts"
         accounts = _userbot_manager.list_accounts()
         connected_accounts = [a for a in accounts if a["is_connected"]]
         if not connected_accounts:
@@ -461,24 +475,28 @@ async def _bg_rdp_plans_post(status_msg) -> None:
             )
             return
 
-        # .client gives the underlying raw TelegramClient (Telethon)
+        # Build {account_id_str: UserBotClient}
+        _step = "build_client_map"
         client_map = {
             str(a["account_id"]): _userbot_manager.get_client(a["account_id"])
             for a in connected_accounts
         }
         fallback_ub = _userbot_manager.get_client(connected_accounts[0]["account_id"])
 
+        _step = "get_channels"
         all_channels = await _get_active_channels()
         if not all_channels:
             await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
             return
 
+        _step = "load_image"
         image_bytes = _read_local_file(_BANNER_REL_PATH)
         plans_buttons = [
             [TelethonButton.url("🛒  سفارش RDP", "https://t.me/vps24h")],
             [TelethonButton.url("💬  تماس با ادمین", "https://t.me/vps24h")],
         ]
 
+        _step = "send_channels"
         success, failed = 0, 0
         failed_reasons = []
 
@@ -486,8 +504,10 @@ async def _bg_rdp_plans_post(status_msg) -> None:
             ub = client_map.get(str(ch.account_id)) or fallback_ub
             if ub is None:
                 failed += 1
+                failed_reasons.append(f"{ch.telegram_channel_id}: no client")
                 continue
-            tg = ub.client  # raw Telethon TelegramClient
+            # ub is UserBotClient; ub.client is the raw Telethon TelegramClient
+            tg = ub.client
 
             seed = random.randint(0, 9_999_999)
             post_text, _ = build_rdp_plans_post(channel_username=ch.username, seed=seed)
@@ -530,10 +550,10 @@ async def _bg_rdp_plans_post(status_msg) -> None:
         logger.info("admin_rdp_plans_post_done", success=success, failed=failed)
 
     except Exception as e:
-        logger.error("bg_rdp_plans_post_crashed", error=str(e))
+        logger.error("bg_rdp_plans_post_crashed", step=_step, error=str(e))
         try:
             await status_msg.edit_text(
-                f"❌ *خطای غیرمنتظره:*\n`{str(e)[:300]}`",
+                f"❌ *خطا در مرحله `{_step}`:*\n`{str(e)[:300]}`",
                 parse_mode="Markdown", reply_markup=back_kb(),
             )
         except Exception:
