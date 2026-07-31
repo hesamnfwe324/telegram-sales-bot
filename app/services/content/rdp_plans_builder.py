@@ -47,7 +47,7 @@ RDP_PLANS = [
     },
 ]
 
-_BANNER_IMAGE = "FILE:app/assets/rdp_banner.jpg"
+_BANNER_IMAGE = "FILE:app/assets/upgrade_team_banner.jpg"
 
 _HEADLINES = [
     ("🖥  W I N D O W S   R D P  🖥", "⚡  P R E M I U M   P L A N S"),
@@ -58,50 +58,40 @@ _HEADLINES = [
 ]
 
 _CHANNEL_TAG_FORMATS = [
-    "📢  @{u}  —  Join Our Channel",
-    "📡  @{u}  |  Official Channel",
-    "🔔  @{u}  ·  Subscribe Now",
-    "💬  @{u}  —  Our Community",
-    "🌐  @{u}  |  Follow Us",
-    "⭐  @{u}  ·  Stay Updated",
+    "📢 @{u} — Join Our Channel",
+    "📡 @{u} | Official Channel",
+    "🔔 @{u} · Subscribe Now",
+    "🌐 @{u} | Follow Us",
+    "⭐ @{u} · Stay Updated",
 ]
 
 _ADMIN_SIGNATURES = [
-    "💎  Senior Admin  |  @VPS24H",
-    "👑  Official Admin  ›  @VPS24H",
-    "🛡️  Head of Operations  ›  @VPS24H",
-    "⚜️  Verified Admin  ·  @VPS24H",
-    "🔱  Director & Admin  ›  @VPS24H",
-    "⚡  Chief Admin  |  @VPS24H",
-    "🌟  Verified Publisher  ·  @VPS24H",
-    "🏆  Authorized Admin  ·  @VPS24H",
-    "🔐  Certified Admin  ›  @VPS24H",
-    "📡  Admin & Publisher  |  @VPS24H",
+    "💎 Senior Admin | @VPS24H",
+    "👑 Official Admin › @VPS24H",
+    "🛡️ Head of Operations › @VPS24H",
+    "⚜️ Verified Admin · @VPS24H",
+    "🔱 Director & Admin › @VPS24H",
+    "⚡ Chief Admin | @VPS24H",
+    "🌟 Verified Publisher · @VPS24H",
+    "🏆 Authorized Admin · @VPS24H",
+    "🔐 Certified Admin › @VPS24H",
+    "📡 Admin & Publisher | @VPS24H",
 ]
 
-_THICK_SEP = "═" * 38
-_PLAN_SEP  = "┄" * 38
+_SEP   = "━" * 36
+_THIN  = "┄" * 36
 
 
 def _spaced(name: str) -> str:
-    """Return 'PRO' → 'P R O' for premium look."""
     return "  ".join(name)
 
 
 def _plan_card(p: dict) -> str:
-    badge = p["badge"]
-    name  = _spaced(p["name"])
-    cpu   = p["cpu"]
-    ram   = p["ram"]
-    disk  = p["disk"]
-    net   = p["net"]
-    price = p["price"]
-
     return (
-        f"◈ {badge}  {name}\n"
-        f"┣ 💻  {cpu:<10}  🧠  {ram}\n"
-        f"┣ 💾  {disk:<12}  🌐  {net}\n"
-        f"┗━ 💰  {price} / month"
+        f"◈ {p['badge']}  {_spaced(p['name'])}\n"
+        f"┣ 💻 {p['cpu']:<10} 🧠 {p['ram']}\n"
+        f"┣ 💾 {p['disk']:<12} 🌐 {p['net']}\n"
+        f"┗━ 💰 {p['price']} / month"
     )
 
 
@@ -109,17 +99,12 @@ def build_rdp_plans_post(
     channel_username: str | None = None,
     seed: int | None = None,
 ) -> tuple[str, str]:
-    """
-    Build the RDP plans channel post.
-    Returns (post_text, image_url).
-    """
     if seed is None:
         seed = _random.randint(0, 9_999_999)
 
     h1, h2    = _HEADLINES[seed % len(_HEADLINES)]
     admin_sig = _ADMIN_SIGNATURES[seed % len(_ADMIN_SIGNATURES)]
-
-    cards_txt = f"\n{_PLAN_SEP}\n".join(_plan_card(p) for p in RDP_PLANS)
+    cards_txt = f"\n{_THIN}\n".join(_plan_card(p) for p in RDP_PLANS)
 
     tag_line = ""
     if channel_username:
@@ -128,22 +113,21 @@ def build_rdp_plans_post(
         tag_line = fmt.format(u=u) + "\n"
 
     text = (
-        f"⚡{_THICK_SEP}⚡\n"
-        f"   {h1}\n"
-        f"    {h2}\n"
-        f"⚡{_THICK_SEP}⚡\n\n"
-        "🔐  Full Admin  ·  Windows 2019 / 2022\n"
-        "⚡  KVM  ·  NVMe SSD  ·  99.9% Uptime\n"
-        "🌍  EU / US  ·  DDoS Protected\n\n"
-        f"{_THICK_SEP}\n\n"
-        f"{cards_txt}\n\n"
-        f"{_THICK_SEP}\n\n"
-        "✅  Full RDP Access  ·  Root Admin\n"
-        "✅  Windows Server 2019 / 2022\n"
-        "✅  Instant Delivery  ·  24/7 Support\n"
-        "✅  Monthly Billing  ·  Easy Renewal\n\n"
+        f"⚡{_SEP}⚡\n"
+        f"  {h1}\n"
+        f"   {h2}\n"
+        f"⚡{_SEP}⚡\n"
+        f"🔐 Full Admin · Windows 2019/2022\n"
+        f"⚡ KVM · NVMe SSD · 99.9% Uptime\n"
+        f"🌍 EU/US · DDoS Protected\n"
+        f"{_SEP}\n"
+        f"{cards_txt}\n"
+        f"{_SEP}\n"
+        f"✅ Full RDP Access · Root Admin\n"
+        f"✅ Instant Delivery · 24/7 Support\n"
+        f"✅ Monthly Billing · Easy Renewal\n"
         f"{tag_line}"
-        f"{_THICK_SEP}\n"
+        f"{_SEP}\n"
         f"{admin_sig}"
     )
 
