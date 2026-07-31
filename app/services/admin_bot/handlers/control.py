@@ -298,9 +298,31 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
         return
 
-    # FIX: Manual admin trigger bypasses cooldown — admin button must reach
-      # ALL active channels, not just those outside the auto-poster window.
-      channels = all_channels
+    channels = []
+    cooldowns = []
+    for ch in all_channels:
+        remaining = await get_cooldown_remaining(str(ch.id))
+        if remaining > 0:
+            cooldowns.append(remaining)
+            logger.info("rdp_admin_channel_cooldown_skip",
+                        channel=ch.telegram_channel_id,
+                        remaining_min=remaining // 60)
+        else:
+            channels.append(ch)
+
+    if not channels:
+        # All channels on cooldown — show actual minimum remaining time
+        min_remaining = min(cooldowns) if cooldowns else 0
+        h = min_remaining // 3600
+        m = (min_remaining % 3600) // 60
+        await status_msg.edit_text(
+            f"⏳ *همه کانال‌ها در cooldown هستند!*\n\n"
+            f"آخرین پست کمتر از ۳ ساعت پیش ارسال شد.\n"
+            f"⏱ کمترین زمان باقی‌مانده: *{h}h {m:02d}m*",
+            parse_mode="Markdown",
+            reply_markup=back_kb(),
+        )
+        return
 
     # ── Step 5: Load banner image once (shared across channels) ─────────────
     from app.services.content.rdp_post_builder import build_rdp_post
@@ -455,35 +477,16 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
     # ── Load banner image once ────────────────────────────────────────────────
     from app.services.channel.publisher import _read_local_file, _BANNER_REL_PATH
     from app.services.content.rdp_plans_builder import build_rdp_plans_post
-    from app.core.config import settings
-    import httpx
     import io
+    from telethon.tl.custom import Button as TelethonButton
 
-    async def _add_plans_buttons(channel_id, message_id):
-        """Edit the plans post to add glass inline URL buttons via admin bot."""
-        bot_token = settings.ADMIN_BOT_TOKEN
-        if not bot_token:
-            return
-        try:
-            async with httpx.AsyncClient(timeout=8) as http:
-                resp = await http.post(
-                    f"https://api.telegram.org/bot{bot_token}/editMessageReplyMarkup",
-                    json={
-                        "chat_id": channel_id,
-                        "message_id": message_id,
-                        "reply_markup": {
-                            "inline_keyboard": [
-                                [{"text": "🛒  سفارش RDP", "url": "https://t.me/vps24h"}],
-                                [{"text": "💬  تماس با ادمین", "url": "https://t.me/vps24h"}],
-                            ]
-                        },
-                    },
-                )
-                data = resp.json()
-                if not data.get("ok"):
-                    logger.warning("add_plans_buttons_failed", channel=str(channel_id), reason=data.get("description"))
-        except Exception as exc:
-            logger.warning("add_plans_buttons_exception", error=str(exc))
+    # FIX: _add_plans_buttons used Bot API editMessageReplyMarkup which cannot
+    # edit userbot messages — buttons never appeared. Now passed inline to
+    # send_file / send_message via Telethon buttons= parameter.
+    plans_buttons = [
+        [TelethonButton.url("🛒  سفارش RDP", "https://t.me/vps24h")],
+        [TelethonButton.url("💬  تماس با ادمین", "https://t.me/vps24h")],
+    ]
 
     image_bytes = _read_local_file(_BANNER_REL_PATH)
 
@@ -506,15 +509,16 @@ async def ctrl_rdp_plans_post(callback: CallbackQuery):
             if image_bytes:
                 file_obj = io.BytesIO(image_bytes)
                 file_obj.name = "banner.jpg"
-                msg = await ch_client.send_file(
+                await ch_client.send_file(
                     ch.telegram_channel_id, file_obj,
                     caption=post_text, parse_mode="md",
+                    buttons=plans_buttons,
                 )
             else:
-                msg = await ch_client.send_message(
+                await ch_client.send_message(
                     ch.telegram_channel_id, post_text, parse_mode="md",
+                    buttons=plans_buttons,
                 )
-            await _add_plans_buttons(ch.telegram_channel_id, msg.id)
 
             success += 1
             logger.info("rdp_plans_sent_to_channel", channel=ch.telegram_channel_id)
