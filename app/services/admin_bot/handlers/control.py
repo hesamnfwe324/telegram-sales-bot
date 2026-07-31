@@ -367,8 +367,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
     await status_msg.edit_text(result_text, parse_mode="Markdown", reply_markup=back_kb())
     logger.info("admin_rdp_post_done", success=success, failed=failed, ip=ip, country=country_name)
 
-    @router.callback_query(F.data == "ctrl_rdp_plans_post")
-    async def ctrl_rdp_plans_post(callback: CallbackQuery):
+@router.callback_query(F.data == "ctrl_rdp_plans_post")
+async def ctrl_rdp_plans_post(callback: CallbackQuery):
     """Send RDP pricing-plans post to ALL active channels.
 
     Manual admin override — no cooldown, no lock, FloodWait-aware with retry.
@@ -462,8 +462,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
     await status_msg.edit_text(result_text, parse_mode="Markdown", reply_markup=back_kb())
     logger.info("admin_rdp_plans_post_done", success=success, failed=failed)
 
-    @router.message(Command("post_now"))
-    async def cmd_post_now(message: Message):
+@router.message(Command("post_now"))
+async def cmd_post_now(message: Message):
         await message.answer("🚀 در حال ارسال پست فوری...")
 
         if not _userbot_manager:
@@ -495,8 +495,8 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         )
 
 
-    @router.message(Command("scan_channels"))
-    async def cmd_scan_channels(message: Message):
+@router.message(Command("scan_channels"))
+async def cmd_scan_channels(message: Message):
         await message.answer("📡 در حال اسکن کانال‌ها...")
 
         if not _userbot_manager:
@@ -534,9 +534,9 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         await message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
 
 
-    @router.message(Command("channel_diag"))
-    @router.callback_query(F.data == "ctrl_channel_diag")
-    async def channel_diag(event: Message | CallbackQuery):
+@router.message(Command("channel_diag"))
+@router.callback_query(F.data == "ctrl_channel_diag")
+async def channel_diag(event: Message | CallbackQuery):
         """
         Show per-channel diagnostic: account connectivity, cooldown status,
         and last publish result. Helps identify which channels never receive
