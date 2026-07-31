@@ -317,7 +317,7 @@ async def scan_for_rdp() -> Optional[RDPResult]:
 
     # ── 3. Nothing found — pool empty and scan failed ────────────────────────
     # This should be very rare since Azure has millions of Windows VMs.
-    logger.error("rdp_scan_no_result")
+    logger.warning("rdp_scan_no_result")
     return None
 
 
