@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
+from app.core.config import settings
 from app.services.monitoring.health import full_health_check
 from app.services.admin_bot.keyboards import main_menu_kb, back_kb
 
@@ -15,6 +16,31 @@ async def cmd_start(message: Message):
         "Use the menu below to monitor and control everything."
     )
     await message.answer(text, parse_mode="Markdown", reply_markup=main_menu_kb())
+
+
+@router.message(Command("myid"))
+async def cmd_myid(message: Message):
+    """Public command — no admin check — returns caller's Telegram ID."""
+    user = message.from_user
+    if not user:
+        await message.answer("❌ Could not determine your identity.")
+        return
+
+    admin_ids = settings.admin_ids
+    is_admin = user.id in admin_ids
+
+    text = (
+        f"🆔 *Your Telegram ID:* `{user.id}`\n"
+        f"👤 Name: {user.full_name or 'Unknown'}\n"
+        f"🔑 Admin access: {'✅ Yes' if is_admin else '❌ No'}"
+    )
+    if not is_admin:
+        text += (
+            f"\n\nTo grant yourself admin access, go to Render → "
+            f"Environment Variables and set:\n"
+            f"`ADMIN_TELEGRAM_IDS={user.id}`"
+        )
+    await message.answer(text, parse_mode="Markdown")
 
 
 @router.message(Command("status"))
