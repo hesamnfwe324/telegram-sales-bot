@@ -18,19 +18,20 @@ async def show_sales(event: Message | CallbackQuery):
 
     async with AsyncSessionLocal() as session:
         total = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
-        new = (await session.execute(select(func.count()).where(Lead.status == "new"))).scalar() or 0
-        qualified = (await session.execute(select(func.count()).where(Lead.status == "qualified"))).scalar() or 0
-        negotiating = (await session.execute(select(func.count()).where(Lead.status == "negotiating"))).scalar() or 0
-        won = (await session.execute(select(func.count()).where(Lead.status == "closed_won"))).scalar() or 0
-        lost = (await session.execute(select(func.count()).where(Lead.status == "closed_lost"))).scalar() or 0
+        # FIX: always pass a column to func.count() to avoid ambiguous SELECT count(*) in SQLAlchemy 2.x
+        new = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "new"))).scalar() or 0
+        qualified = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "qualified"))).scalar() or 0
+        negotiating = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "negotiating"))).scalar() or 0
+        won = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "closed_won"))).scalar() or 0
+        lost = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "closed_lost"))).scalar() or 0
 
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
         week_leads = (await session.execute(
-            select(func.count()).where(Lead.created_at >= week_ago)
+            select(func.count(Lead.id)).where(Lead.created_at >= week_ago)
         )).scalar() or 0
 
         hot_leads = (await session.execute(
-            select(func.count()).where(
+            select(func.count(Lead.id)).where(
                 and_(Lead.score >= 0.6, Lead.status.notin_(["closed_won", "closed_lost"]))
             )
         )).scalar() or 0
@@ -98,16 +99,17 @@ async def show_hot_leads(callback: CallbackQuery):
 @router.callback_query(F.data == "sales_pipeline")
 async def show_pipeline(callback: CallbackQuery):
     async with AsyncSessionLocal() as session:
-        vps = (await session.execute(select(func.count()).where(
+        # FIX: always specify Lead.id in func.count()
+        vps = (await session.execute(select(func.count(Lead.id)).where(
             and_(Lead.service_type == "vps", Lead.status.notin_(["closed_won", "closed_lost"]))
         ))).scalar() or 0
-        cloud = (await session.execute(select(func.count()).where(
+        cloud = (await session.execute(select(func.count(Lead.id)).where(
             and_(Lead.service_type == "cloud", Lead.status.notin_(["closed_won", "closed_lost"]))
         ))).scalar() or 0
-        dedicated = (await session.execute(select(func.count()).where(
+        dedicated = (await session.execute(select(func.count(Lead.id)).where(
             and_(Lead.service_type == "dedicated", Lead.status.notin_(["closed_won", "closed_lost"]))
         ))).scalar() or 0
-        general = (await session.execute(select(func.count()).where(
+        general = (await session.execute(select(func.count(Lead.id)).where(
             and_(Lead.service_type == "general", Lead.status.notin_(["closed_won", "closed_lost"]))
         ))).scalar() or 0
 

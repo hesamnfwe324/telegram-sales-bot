@@ -71,7 +71,8 @@ def _parse_proxy_url(raw: str) -> dict | None:
 
 async def _proxy_stats() -> dict:
     async with AsyncSessionLocal() as session:
-        total = (await session.execute(func.count(Proxy.id))).scalar() or 0
+        # FIX: wrap every func.count() in select() — bare func.count() is not executable
+        total = (await session.execute(select(func.count(Proxy.id)))).scalar() or 0
         active = (await session.execute(
             select(func.count(Proxy.id)).where(Proxy.is_active == True)
         )).scalar() or 0

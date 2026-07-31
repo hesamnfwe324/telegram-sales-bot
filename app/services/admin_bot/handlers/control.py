@@ -1,4 +1,4 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from app.services.admin_bot.keyboards import control_kb, back_kb
@@ -21,7 +21,6 @@ def set_userbot_manager(manager) -> None:
 @router.message(Command("control"))
 @router.callback_query(F.data == "control")
 async def show_control(event: Message | CallbackQuery):
-    msg = event if isinstance(event, Message) else event.message
     posting_paused = await cache_get("system:posting_paused")
     status = "⏸ PAUSED" if posting_paused else "▶️ ACTIVE"
 
@@ -30,9 +29,17 @@ async def show_control(event: Message | CallbackQuery):
         f"📢 Posting status: *{status}*\n\n"
         "Select an action:"
     )
-    await msg.answer(text, parse_mode="Markdown", reply_markup=control_kb())
+
     if isinstance(event, CallbackQuery):
+        # FIX: edit the existing message in place instead of sending a new one,
+        # so the chat doesn't accumulate stale messages with dead keyboards.
+        try:
+            await event.message.edit_text(text, parse_mode="Markdown", reply_markup=control_kb())
+        except Exception:
+            await event.message.answer(text, parse_mode="Markdown", reply_markup=control_kb())
         await event.answer()
+    else:
+        await event.answer(text, parse_mode="Markdown", reply_markup=control_kb())
 
 
 @router.callback_query(F.data == "ctrl_start")
@@ -129,79 +136,125 @@ async def ctrl_reset_cooldowns(callback: CallbackQuery):
 
 @router.callback_query(F.data == "ctrl_scan_channels")
 async def ctrl_scan_channels(callback: CallbackQuery):
-    await callback.message.answer("📡 در حال اسکن کانال‌ها... لطفاً صبر کنید.")
+    """
+    FIX: discover_and_register_channels can take 30-120 s depending on how many
+    channels the account has.  Running it synchronously inside the handler was
+    blocking the event loop and causing Telegram to believe the update was never
+    acknowledged — resulting in duplicate retries (the two identical "scanning"
+    messages visible in the chat).
+
+    Solution: answer the callback immediately, send a status message, then
+    dispatch the actual scan as a background asyncio task so this handler
+    returns promptly.
+    """
+    status_msg = await callback.message.answer("📡 در حال اسکن کانال‌ها... لطفاً صبر کنید.")
     await callback.answer()
 
     if not _userbot_manager:
-        await callback.message.answer("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
+        await status_msg.edit_text("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
         return
 
     accounts = _userbot_manager.list_accounts()
-    if not accounts:
-        await callback.message.answer("❌ هیچ اکانتی متصل نیست.", reply_markup=back_kb())
+    connected_accounts = [a for a in accounts if a["is_connected"]]
+    if not connected_accounts:
+        await status_msg.edit_text("❌ هیچ اکانتی متصل نیست.", reply_markup=back_kb())
         return
+
+    # Dispatch as background task so this handler returns immediately
+    asyncio.create_task(
+        _bg_scan_channels(status_msg, connected_accounts)
+    )
+
+
+async def _bg_scan_channels(status_msg, connected_accounts: list) -> None:
+    """Background task: runs channel discovery and updates the status message when done."""
+    from app.services.channel.auto_discover import discover_and_register_channels
 
     total_added = 0
     total_found = 0
     report_lines = []
 
-    from app.services.channel.auto_discover import discover_and_register_channels
+    try:
+        for acc in connected_accounts:
+            result = await discover_and_register_channels(_userbot_manager, acc["account_id"])
+            total_found += result.get("found", 0)
+            total_added += result.get("added", 0)
+            for ch in result.get("channels", []):
+                name = ch.get("title") or ch.get("username") or "بدون نام"
+                report_lines.append(f"  • {name}")
 
-    for acc in accounts:
-        if not acc["is_connected"]:
-            continue
-        result = await discover_and_register_channels(_userbot_manager, acc["account_id"])
-        total_found += result.get("found", 0)
-        total_added += result.get("added", 0)
-        for ch in result.get("channels", []):
-            name = ch.get("title") or ch.get("username") or "بدون نام"
-            report_lines.append(f"  • {name}")
+        channels_list = "\n".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
 
-    channels_list = "\n".join(report_lines[:20]) if report_lines else "  (هیچ کانالی پیدا نشد)"
-
-    text = (
-        "📡 *نتیجه اسکن کانال‌ها*\n\n"
-        f"🔍 پیدا شده: `{total_found}` کانال\n"
-        f"✅ ثبت جدید: `{total_added}` کانال\n\n"
-        f"*کانال‌های یافت‌شده:*\n{channels_list}"
-    )
-    await callback.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
+        text = (
+            "📡 *نتیجه اسکن کانال‌ها*\n\n"
+            f"🔍 پیدا شده: `{total_found}` کانال\n"
+            f"✅ ثبت جدید: `{total_added}` کانال\n\n"
+            f"*کانال‌های یافت‌شده:*\n{channels_list}"
+        )
+        await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=back_kb())
+    except Exception as e:
+        logger.error("bg_scan_channels_failed", error=str(e))
+        try:
+            await status_msg.edit_text(
+                f"❌ خطا در اسکن کانال‌ها:\n`{str(e)[:200]}`",
+                parse_mode="Markdown",
+                reply_markup=back_kb(),
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data == "ctrl_post_now")
 async def ctrl_post_now(callback: CallbackQuery):
-    await callback.message.answer("🚀 در حال ارسال پست فوری به همه کانال‌ها...")
+    status_msg = await callback.message.answer("🚀 در حال ارسال پست فوری به همه کانال‌ها...")
     await callback.answer()
 
     if not _userbot_manager:
-        await callback.message.answer("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
+        await status_msg.edit_text("❌ UserBot در دسترس نیست.", reply_markup=back_kb())
         return
 
+    # Dispatch as background task — posting to many channels can take minutes
+    asyncio.create_task(_bg_post_now(status_msg))
+
+
+async def _bg_post_now(status_msg) -> None:
+    """Background task: posts to all active channels and reports results."""
     from app.services.channel.auto_poster import _post_to_channel, _get_active_channels, _last_post_time
 
-    channels = await _get_active_channels()
-    if not channels:
-        await callback.message.answer("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
-        return
+    try:
+        channels = await _get_active_channels()
+        if not channels:
+            await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
+            return
 
-    success = 0
-    failed = 0
-    now_ts = asyncio.get_event_loop().time()
-    for ch in channels:
-        ok = await _post_to_channel(_userbot_manager, ch)
-        if ok:
-            success += 1
-            _last_post_time[str(ch.id)] = now_ts
-        else:
-            failed += 1
-        await asyncio.sleep(10)
+        success = 0
+        failed = 0
+        now_ts = asyncio.get_event_loop().time()
+        for ch in channels:
+            ok = await _post_to_channel(_userbot_manager, ch)
+            if ok:
+                success += 1
+                _last_post_time[str(ch.id)] = now_ts
+            else:
+                failed += 1
+            await asyncio.sleep(10)
 
-    text = (
-        "✅ پست فوری انجام شد\n\n"
-        f"📤 موفق: `{success}` کانال\n"
-        f"❌ ناموفق: `{failed}` کانال"
-    )
-    await callback.message.answer(text, parse_mode="Markdown", reply_markup=back_kb())
+        text = (
+            "✅ پست فوری انجام شد\n\n"
+            f"📤 موفق: `{success}` کانال\n"
+            f"❌ ناموفق: `{failed}` کانال"
+        )
+        await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=back_kb())
+    except Exception as e:
+        logger.error("bg_post_now_failed", error=str(e))
+        try:
+            await status_msg.edit_text(
+                f"❌ خطا:\n`{str(e)[:200]}`",
+                parse_mode="Markdown",
+                reply_markup=back_kb(),
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data == "ctrl_rdp_post_now")
