@@ -83,4 +83,4 @@ def build_flash_sale_post(
         + admin_sig
     )
 
-    return text, ""
+    return text, "FILE:app/assets/upgrade_team_banner.jpg"
