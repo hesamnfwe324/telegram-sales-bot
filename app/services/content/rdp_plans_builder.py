@@ -115,7 +115,6 @@ def build_rdp_plans_post(
         tag_line = fmt.format(u=u) + "\n"
 
     text = (
-        f"{_SEP}\n\n"
         f"{cards_txt}\n\n"
         f"{_SEP}\n\n"
         f"✅ Full RDP Access · Root Admin\n"
