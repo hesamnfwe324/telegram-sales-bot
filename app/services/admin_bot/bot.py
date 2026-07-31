@@ -156,7 +156,12 @@ async def _safe_feed_update(bot: Bot, dp: Dispatcher, update: Update) -> None:
     try:
         await dp.feed_update(bot, update)
     except Exception as e:
-        logger.error('admin_bot_update_processing_error', error=str(e))
+        err = str(e)
+        # Expired callback queries are expected after restarts — not a real error
+        if "query is too old" in err or "query ID is invalid" in err or "MESSAGE_ID_INVALID" in err:
+            logger.warning('admin_bot_callback_expired', error=err[:120])
+        else:
+            logger.error('admin_bot_update_processing_error', error=err)
 
 
 async def process_update(update_data: dict) -> None:
