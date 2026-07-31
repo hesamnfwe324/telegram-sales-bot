@@ -61,7 +61,7 @@ async def _add_contact_button(channel_id: str | int, message_id: int) -> None:
             if not data.get("ok"):
                 logger.warning("add_contact_button_failed", channel_id=str(channel_id), reason=data.get("description"))
     except Exception as exc:
-        logger.warning("add_contact_button_exception", channel_id=str(channel_id), error=str(exc))
+        logger.warning("add_contact_button_exception", channel_id=str(channel_id), error=repr(exc))
 
 # ── Admin signatures ─────────────────────────────────────────────────────
 ADMIN_SIGNATURES = [
