@@ -2,7 +2,7 @@
 RDP Plans Post Builder — beautiful tree-branch hierarchical layout for Telegram channels.
 
 Each plan is rendered as a branching tree card with emoji-rich specs + price.
-The post starts directly with the separator line + plan cards (no header block).
+Post text is kept under 1024 chars so it sends as a single photo+caption message.
 Returns (post_text, image_url) — image reuses the UPGRADE TEAM brand banner.
 """
 import random as _random
@@ -12,7 +12,6 @@ RDP_PLANS = [
     {
         "icon":  "🌿",
         "badge": "🥈",
-        "tier":  "Entry Level",
         "name":  "PRO",
         "cpu":   "4 vCPU",
         "ram":   "8 GB RAM",
@@ -23,7 +22,6 @@ RDP_PLANS = [
     {
         "icon":  "⚡",
         "badge": "🥇",
-        "tier":  "Standard",
         "name":  "POWER",
         "cpu":   "6 vCPU",
         "ram":   "16 GB RAM",
@@ -34,7 +32,6 @@ RDP_PLANS = [
     {
         "icon":  "💠",
         "badge": "💎",
-        "tier":  "Advanced",
         "name":  "ELITE",
         "cpu":   "8 vCPU",
         "ram":   "32 GB RAM",
@@ -45,7 +42,6 @@ RDP_PLANS = [
     {
         "icon":  "🔱",
         "badge": "🏆",
-        "tier":  "Ultimate",
         "name":  "ULTRA",
         "cpu":   "12 vCPU",
         "ram":   "64 GB RAM",
@@ -78,7 +74,7 @@ _ADMIN_SIGNATURES = [
     "📡 Admin & Publisher | @VPS24H",
 ]
 
-_SEP = "━" * 36
+_SEP = "━" * 30
 
 
 def _spaced(name: str) -> str:
@@ -86,23 +82,14 @@ def _spaced(name: str) -> str:
 
 
 def _plan_card(p: dict) -> str:
-    """Render a single plan as a beautiful tree-branch card."""
-    name_spaced = _spaced(p["name"])
-    header      = f"{p['icon']} ┌── {name_spaced} ──────── {p['badge']}"
-    branch_cpu  = f"   ├── 🖥️  Processor  ➜  {p['cpu']}"
-    branch_ram  = f"   ├── 🧠  Memory     ➜  {p['ram']}"
-    branch_disk = f"   ├── 💾  Storage    ➜  {p['disk']}"
-    branch_net  = f"   ├── 🌐  Network    ➜  {p['net']}"
-    branch_tier = f"   ├── 🏷️  Tier       ➜  {p['tier']}"
-    branch_price = f"   └── 💰  Price      ➜  {p['price']} / month"
+    """Render a single plan as a compact tree-branch card."""
     return "\n".join([
-        header,
-        branch_cpu,
-        branch_ram,
-        branch_disk,
-        branch_net,
-        branch_tier,
-        branch_price,
+        f"{p['icon']} ┌── {_spaced(p['name'])} ── {p['badge']}",
+        f"   ├── 🖥️ CPU  ➜ {p['cpu']}",
+        f"   ├── 🧠 RAM  ➜ {p['ram']}",
+        f"   ├── 💾 SSD  ➜ {p['disk']}",
+        f"   ├── 🌐 NET  ➜ {p['net']}",
+        f"   └── 💰 Price ➜ {p['price']} / month",
     ])
 
 
@@ -122,14 +109,13 @@ def build_rdp_plans_post(
         fmt = _CHANNEL_TAG_FORMATS[seed % len(_CHANNEL_TAG_FORMATS)]
         tag_line = fmt.format(u=u) + "\n"
 
-    # Post starts directly with the separator — no header block above it
     text = (
         f"{_SEP}\n\n"
         f"{cards_txt}\n\n"
         f"{_SEP}\n\n"
-        f"✅  Full RDP Access  ·  Root Admin\n"
-        f"✅  Instant Delivery  ·  24/7 Support\n"
-        f"✅  Monthly Billing  ·  Easy Renewal\n"
+        f"✅ Full RDP Access · Root Admin\n"
+        f"✅ Instant Delivery · 24/7 Support\n"
+        f"✅ Monthly Billing · Easy Renewal\n"
         f"{tag_line}"
         f"\n{_SEP}\n"
         f"{admin_sig}"
