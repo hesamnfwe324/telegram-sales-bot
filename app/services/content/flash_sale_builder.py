@@ -6,7 +6,7 @@ import random as _random
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-TEHRAN = ZoneInfo("Asia/Tehran")
+NEW_YORK = ZoneInfo("America/New_York")
 
 _PLANS = [
     {"icon": "🌿", "badge": "🥈", "name": "PRO",   "tier": "Entry Level", "cpu": "4 vCPU",  "ram": "8 GB RAM",  "disk": "120 GB SSD", "net": "1 Gbps", "price": 16},
@@ -19,34 +19,30 @@ _DISCOUNTS = [20, 25, 30]
 
 _ADMIN_SIGNATURES = [
     "💎 Senior Admin | @VPS24H",
-    "👑 Official Admin › @VPS24H",
+    "👑 fficial Admin › @VPS24H",
     "⚡ Chief Admin | @VPS24H",
     "🔱 Director & Admin › @VPS24H",
     "⚜️ Verified Admin · @VPS24H",
 ]
 
-_SEP = "━" * 30
-
-
-def _spaced(name: str) -> str:
-    return "  ".join(name)
+_SEP = "━" * 28
 
 
 def _sale_card(p: dict, discount: int) -> str:
     orig = p["price"]
     sale = round(orig * (1 - discount / 100))
-    name_spaced = _spaced(p["name"])
     lines = [
-        p["icon"] + " ┌── " + name_spaced + " ──────── " + p["badge"],
-        "   ├── 🖥️  Processor → " + p["cpu"],
-        "   ├── 🧠  Memory    → " + p["ram"],
-        "   ├── 💾  Storage   → " + p["disk"],
-        "   ├── 🌐  Network   → " + p["net"],
-        "   ├── 🏷️  Tier      → " + p["tier"],
-        "   ├── 💸  Was       → $" + str(orig) + " / month",
-        "   └── 💰  NOW       → $" + str(sale) + " / month  🔥 -" + str(discount) + "%",
+        p["icon"] + " ┌── " + p["name"] + " " + p["badge"],
+        "   ├── CPU:     " + p["cpu"],
+        "   ├── RAM:     " + p["ram"],
+        "   ├── Storage: " + p["disk"],
+        "   ├── Network: " + p["net"],
+        "   ├── Tier:    " + p["tier"],
+        "   ├── Was:    $" + str(orig) + "/mo",
+        "   └── NOW:    $" + str(sale) + "/mo  🔥 -" + str(discount) + "%",
     ]
-    return "\n".join(lines)
+    return "
+".join(lines)
 
 
 def build_flash_sale_post(
@@ -61,30 +57,48 @@ def build_flash_sale_post(
     discount = _DISCOUNTS[seed % len(_DISCOUNTS)]
     admin_sig = _ADMIN_SIGNATURES[seed % len(_ADMIN_SIGNATURES)]
 
-    now_tehran = datetime.now(TEHRAN)
-    expires_at = now_tehran + timedelta(hours=duration_hours)
+    now_ny = datetime.now(NEW_YORK)
+    expires_at = now_ny + timedelta(hours=duration_hours)
     expires_str = expires_at.strftime("%H:%M")
 
-    cards_txt = "\n\n".join(_sale_card(p, discount) for p in _PLANS)
+    cards_txt = "
+
+".join(_sale_card(p, discount) for p in _PLANS)
 
     tag_line = ""
     if channel_username:
         u = channel_username.lstrip("@")
-        tag_line = "\n📢 @" + u + " — Join for more deals"
+        tag_line = "
+📢 @" + u + " — Join for more deals"
 
     text = (
-        "⚡ F L A S H   S A L E ⚡\n"
-        + _SEP + "\n\n"
-        + "🔥 LIMITED TIME — " + str(duration_hours) + " HOURS ONLY\n"
-        + "⏰ Expires: " + expires_str + " (Tehran Time)\n\n"
-        + cards_txt + "\n\n"
-        + _SEP + "\n\n"
-        + "✅ Full RDP Access · Root Admin\n"
-        + "✅ Instant Delivery · 24/7 Support\n"
-        + "✅ Monthly Billing · Easy Renewal\n"
+        "⚡ FLASH SALE ⚡
+"
+        + _SEP + "
+
+"
+        + "🔥 LIMITED TIME — " + str(duration_hours) + " HOURS ONLY
+"
+        + "⏰ Expires: " + expires_str + " (New York Time)
+
+"
+        + cards_txt + "
+
+"
+        + _SEP + "
+
+"
+        + "✅ Full RDP Access · Root Admin
+"
+        + "✅ Instant Delivery · 24/7 Support
+"
+        + "✅ Monthly Billing · Easy Renewal
+"
         + "📲 DM @VPS24H to claim your discount"
-        + tag_line + "\n"
-        + _SEP + "\n"
+        + tag_line + "
+"
+        + _SEP + "
+"
         + admin_sig
     )
 
