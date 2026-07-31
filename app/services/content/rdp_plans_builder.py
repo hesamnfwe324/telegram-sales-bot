@@ -68,11 +68,11 @@ RDP_PLANS = [
 _BANNER_IMAGE = "FILE:app/assets/rdp_banner.jpg"
 
 _HEADLINES = [
-    "🖥  W I N D O W S   R D P  🖥\n   P R E M I U M   P L A N S",
-    "💻  R D P   V P S   S E R V E R S  💻\n    B E S T   P R I C E S",
-    "⚡  W I N D O W S   V P S  ⚡\n  P R E M I U M   H O S T I N G",
-    "🚀  R E M O T E   D E S K T O P  🚀\n     V P S   P L A N S",
-    "🌐  W I N D O W S   S E R V E R  🌐\n      V P S   P R I C I N G",
+    ("🖥  W I N D O W S   R D P  🖥", "⚡  P R E M I U M   P L A N S"),
+    ("💻  R D P   V P S   S E R V E R S  💻", "🌟  B E S T   P R I C E S"),
+    ("⚡  W I N D O W S   V P S  ⚡", "🚀  P R E M I U M   H O S T I N G"),
+    ("🚀  R E M O T E   D E S K T O P  🚀", "💎  V P S   P L A N S"),
+    ("🌐  W I N D O W S   S E R V E R  🌐", "🔥  V P S   P R I C I N G"),
 ]
 
 _CHANNEL_TAG_FORMATS = [
@@ -97,10 +97,10 @@ _ADMIN_SIGNATURES = [
     "📡  Admin & Publisher  |  @VPS24H",
 ]
 
-_TOP_BORDER    = "╔" + "═" * 36 + "╗"
-_BOT_BORDER    = "╚" + "═" * 36 + "╝"
-_THICK_SEP     = "━" * 38
-_THIN_SEP      = "┄" * 38
+_TOP_BORDER = "╔" + "═" * 36 + "╗"
+_BOT_BORDER = "╚" + "═" * 36 + "╝"
+_THICK_SEP  = "═" * 38
+_PLAN_SEP   = "┄" * 38
 
 
 def _spaced(name: str) -> str:
@@ -118,10 +118,10 @@ def _plan_card(p: dict) -> str:
     price = p["price"]
 
     return (
-        f"▸ {badge}  {name}\n\n"
-        f"   💻  {cpu:<8}  🧠  {ram}\n"
-        f"   💾  {disk:<10}  🌐  {net}\n\n"
-        f"   💵  {price} / month"
+        f"◈ {badge}  {name}\n"
+        f"┣ 💻  {cpu:<10}  🧠  {ram}\n"
+        f"┣ 💾  {disk:<12}  🌐  {net}\n"
+        f"┗━ 💰  {price} / month"
     )
 
 
@@ -136,39 +136,34 @@ def build_rdp_plans_post(
     if seed is None:
         seed = _random.randint(0, 9_999_999)
 
-    headline  = _HEADLINES[seed % len(_HEADLINES)]
+    h1, h2    = _HEADLINES[seed % len(_HEADLINES)]
     admin_sig = _ADMIN_SIGNATURES[seed % len(_ADMIN_SIGNATURES)]
 
-    # Build plan cards separated by thin dashes
-    cards_txt = f"\n{_THIN_SEP}\n\n".join(_plan_card(p) for p in RDP_PLANS)
+    cards_txt = f"\n{_PLAN_SEP}\n".join(_plan_card(p) for p in RDP_PLANS)
 
     tag_line = ""
     if channel_username:
         u   = channel_username.lstrip("@")
         fmt = _CHANNEL_TAG_FORMATS[seed % len(_CHANNEL_TAG_FORMATS)]
-        tag_line = fmt.format(u=u)
+        tag_line = fmt.format(u=u) + "\n"
 
     text = (
         f"{_TOP_BORDER}\n"
-        f"  {headline}\n"
+        f"   {h1}\n"
+        f"    {h2}\n"
         f"{_BOT_BORDER}\n\n"
-        "🔒  Full Admin  ·  Windows Server 2022\n"
+        "🔐  Full Admin  ·  Windows 2019 / 2022\n"
         "⚡  KVM  ·  NVMe SSD  ·  99.9% Uptime\n"
-        "🌐  High Speed  ·  DDoS Guard  ·  EU/US\n\n"
+        "🌍  EU / US  ·  DDoS Protected\n\n"
         f"{_THICK_SEP}\n\n"
         f"{cards_txt}\n\n"
         f"{_THICK_SEP}\n\n"
         "✅  Full RDP Access  ·  Root Admin\n"
         "✅  Windows Server 2019 / 2022\n"
         "✅  Instant Delivery  ·  24/7 Support\n"
-        "✅  Monthly Billing  ·  Easy Renewal\n"
-    )
-
-    if tag_line:
-        text += f"{tag_line}\n"
-
-    text += (
-        f"\n{_THICK_SEP}\n"
+        "✅  Monthly Billing  ·  Easy Renewal\n\n"
+        f"{tag_line}"
+        f"{_THICK_SEP}\n"
         f"{admin_sig}"
     )
 
