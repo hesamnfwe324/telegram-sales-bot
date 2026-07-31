@@ -6,6 +6,9 @@ from typing import Callable, Dict, Any, Awaitable
 
 logger = get_logger(__name__)
 
+# Commands that bypass admin check — anyone can use them
+_PUBLIC_COMMANDS = {"/myid"}
+
 
 class AdminOnlyMiddleware(BaseMiddleware):
     async def __call__(
@@ -21,13 +24,37 @@ class AdminOnlyMiddleware(BaseMiddleware):
         if not user:
             return
 
+        # Allow public commands to pass through without admin check
+        if isinstance(event, Message) and event.text:
+            cmd = event.text.split()[0].split("@")[0].lower()
+            if cmd in _PUBLIC_COMMANDS:
+                data["admin_id"] = None
+                return await handler(event, data)
+
         admin_ids = settings.admin_ids
         if user.id not in admin_ids:
-            logger.warning("unauthorized_admin_access", user_id=user.id, username=user.username)
+            logger.warning(
+                "unauthorized_admin_access",
+                user_id=user.id,
+                username=user.username,
+                admin_ids_configured=admin_ids,
+            )
             if isinstance(event, Message):
-                await event.answer("⛔ Unauthorized. This bot is for admins only.")
+                try:
+                    await event.answer(
+                        f"⛔ Unauthorized.\n\n"
+                        f"Your Telegram ID: `{user.id}`\n"
+                        f"Send /myid to see your ID, then update "
+                        f"`ADMIN_TELEGRAM_IDS` on Render.",
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
             elif isinstance(event, CallbackQuery):
-                await event.answer("⛔ Unauthorized.", show_alert=True)
+                try:
+                    await event.answer("⛔ Unauthorized.", show_alert=True)
+                except Exception:
+                    pass
             return
 
         data["admin_id"] = user.id
