@@ -10,24 +10,6 @@ import random as _random
 # ── Plan catalogue — edit prices/specs here ───────────────────────────────────
 RDP_PLANS = [
     {
-        "badge": "🔵",
-        "name": "NANO",
-        "cpu":  "1 vCPU",
-        "ram":  "2 GB RAM",
-        "disk": "30 GB SSD",
-        "net":  "1 Gbps",
-        "price": "$4",
-    },
-    {
-        "badge": "🥉",
-        "name": "STARTER",
-        "cpu":  "2 vCPU",
-        "ram":  "4 GB RAM",
-        "disk": "60 GB SSD",
-        "net":  "1 Gbps",
-        "price": "$8",
-    },
-    {
         "badge": "🥈",
         "name": "PRO",
         "cpu":  "4 vCPU",
@@ -97,10 +79,8 @@ _ADMIN_SIGNATURES = [
     "📡  Admin & Publisher  |  @VPS24H",
 ]
 
-_TOP_BORDER = "╔" + "═" * 36 + "╗"
-_BOT_BORDER = "╚" + "═" * 36 + "╝"
-_THICK_SEP  = "═" * 38
-_PLAN_SEP   = "┄" * 38
+_THICK_SEP = "═" * 38
+_PLAN_SEP  = "┄" * 38
 
 
 def _spaced(name: str) -> str:
@@ -148,10 +128,10 @@ def build_rdp_plans_post(
         tag_line = fmt.format(u=u) + "\n"
 
     text = (
-        f"{_TOP_BORDER}\n"
+        f"⚡{_THICK_SEP}⚡\n"
         f"   {h1}\n"
         f"    {h2}\n"
-        f"{_BOT_BORDER}\n\n"
+        f"⚡{_THICK_SEP}⚡\n\n"
         "🔐  Full Admin  ·  Windows 2019 / 2022\n"
         "⚡  KVM  ·  NVMe SSD  ·  99.9% Uptime\n"
         "🌍  EU / US  ·  DDoS Protected\n\n"
