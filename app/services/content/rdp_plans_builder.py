@@ -2,6 +2,7 @@
 RDP Plans Post Builder — beautiful tree-branch hierarchical layout for Telegram channels.
 
 Each plan is rendered as a branching tree card with emoji-rich specs + price.
+The post starts directly with the separator line + plan cards (no header block).
 Returns (post_text, image_url) — image reuses the UPGRADE TEAM brand banner.
 """
 import random as _random
@@ -56,14 +57,6 @@ RDP_PLANS = [
 
 _BANNER_IMAGE = "FILE:app/assets/upgrade_team_banner.jpg"
 
-_HEADLINES = [
-    ("🖥️  W I N D O W S   R D P  🖥️", "✨  P R E M I U M   P L A N S"),
-    ("💻  R D P   V P S   S E R V E R S  💻", "🌟  B E S T   P R I C E S"),
-    ("⚡  W I N D O W S   V P S  ⚡", "🚀  P R E M I U M   H O S T I N G"),
-    ("🚀  R E M O T E   D E S K T O P  🚀", "💎  V P S   P L A N S"),
-    ("🌐  W I N D O W S   S E R V E R  🌐", "🔥  V P S   P R I C I N G"),
-]
-
 _CHANNEL_TAG_FORMATS = [
     "📢 @{u} — Join Our Channel",
     "📡 @{u} | Official Channel",
@@ -85,8 +78,7 @@ _ADMIN_SIGNATURES = [
     "📡 Admin & Publisher | @VPS24H",
 ]
 
-_SEP  = "━" * 36
-_DASH = "─" * 32
+_SEP = "━" * 36
 
 
 def _spaced(name: str) -> str:
@@ -96,9 +88,7 @@ def _spaced(name: str) -> str:
 def _plan_card(p: dict) -> str:
     """Render a single plan as a beautiful tree-branch card."""
     name_spaced = _spaced(p["name"])
-    # Header row: icon + plan name + badge
-    header = f"{p['icon']} ┌── {name_spaced} ──────── {p['badge']}"
-    # Tree branches for each spec
+    header      = f"{p['icon']} ┌── {name_spaced} ──────── {p['badge']}"
     branch_cpu  = f"   ├── 🖥️  Processor  ➜  {p['cpu']}"
     branch_ram  = f"   ├── 🧠  Memory     ➜  {p['ram']}"
     branch_disk = f"   ├── 💾  Storage    ➜  {p['disk']}"
@@ -123,10 +113,7 @@ def build_rdp_plans_post(
     if seed is None:
         seed = _random.randint(0, 9_999_999)
 
-    h1, h2    = _HEADLINES[seed % len(_HEADLINES)]
     admin_sig = _ADMIN_SIGNATURES[seed % len(_ADMIN_SIGNATURES)]
-
-    # Join all plan cards with a thin blank line between them
     cards_txt = "\n\n".join(_plan_card(p) for p in RDP_PLANS)
 
     tag_line = ""
@@ -135,14 +122,8 @@ def build_rdp_plans_post(
         fmt = _CHANNEL_TAG_FORMATS[seed % len(_CHANNEL_TAG_FORMATS)]
         tag_line = fmt.format(u=u) + "\n"
 
+    # Post starts directly with the separator — no header block above it
     text = (
-        f"🌟{_SEP}🌟\n"
-        f"    {h1}\n"
-        f"    {h2}\n"
-        f"🌟{_SEP}🌟\n\n"
-        f"🔐  Full Admin  ·  Windows 2019 / 2022\n"
-        f"⚡  KVM  ·  NVMe SSD  ·  99.9% Uptime\n"
-        f"🌍  EU / US  ·  DDoS Protected\n\n"
         f"{_SEP}\n\n"
         f"{cards_txt}\n\n"
         f"{_SEP}\n\n"
