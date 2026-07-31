@@ -21,6 +21,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
 def publishing_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Create New Post", callback_data="post_new")
+    builder.button(text="⚡ Flash Sale", callback_data="flash_sale")
     builder.button(text="📊 Publishing Stats", callback_data="post_stats")
     builder.button(text="🔙 Main Menu", callback_data="main_menu")
     builder.adjust(1)
