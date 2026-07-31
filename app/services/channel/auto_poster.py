@@ -360,13 +360,20 @@ async def run_auto_poster(userbot_manager):
             # scan_for_rdp() pops randomly from the Redis pool, so every call
             # returns a distinct IP. We pre-fetch all results before posting
             # so a timeout on one channel never blocks the others.
+            #
+            # FALLBACK: when the pool runs dry and inline scan also fails,
+            # reuse the last successfully fetched result from this cycle so
+            # every ready channel still gets a post instead of being skipped.
             from app.services.scanner.rdp_scanner import scan_for_rdp
 
             channel_results: list[tuple] = []   # (channel, rdp_result)
+            _last_good_rdp: dict | None = None   # fallback when pool is dry
+
             for ch in ready_channels:
                 try:
                     rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
                     if rdp_result:
+                        _last_good_rdp = rdp_result
                         channel_results.append((ch, rdp_result))
                         logger.info(
                             "auto_poster_rdp_fetched",
@@ -374,16 +381,32 @@ async def run_auto_poster(userbot_manager):
                             ip=rdp_result["ip"],
                             country=rdp_result["country_name"],
                         )
+                    elif _last_good_rdp:
+                        # Pool empty for this channel — reuse earlier result
+                        channel_results.append((ch, _last_good_rdp))
+                        logger.info(
+                            "auto_poster_rdp_pool_dry_using_fallback",
+                            channel=ch.display_name,
+                            ip=_last_good_rdp["ip"],
+                        )
                     else:
                         logger.info(
                             "auto_poster_rdp_no_result_skipping_channel",
                             channel=ch.display_name,
                         )
                 except asyncio.TimeoutError:
-                    logger.warning(
-                        "auto_poster_rdp_scan_timeout_skipping_channel",
-                        channel=ch.display_name,
-                    )
+                    if _last_good_rdp:
+                        channel_results.append((ch, _last_good_rdp))
+                        logger.info(
+                            "auto_poster_rdp_timeout_using_fallback",
+                            channel=ch.display_name,
+                            ip=_last_good_rdp["ip"],
+                        )
+                    else:
+                        logger.warning(
+                            "auto_poster_rdp_scan_timeout_skipping_channel",
+                            channel=ch.display_name,
+                        )
                 except Exception as scan_err:
                     logger.error(
                         "auto_poster_rdp_scan_error_skipping_channel",
