@@ -298,31 +298,9 @@ async def ctrl_rdp_post_now(callback: CallbackQuery):
         await status_msg.edit_text("❌ هیچ کانال فعالی وجود ندارد.", reply_markup=back_kb())
         return
 
-    channels = []
-    cooldowns = []
-    for ch in all_channels:
-        remaining = await get_cooldown_remaining(str(ch.id))
-        if remaining > 0:
-            cooldowns.append(remaining)
-            logger.info("rdp_admin_channel_cooldown_skip",
-                        channel=ch.telegram_channel_id,
-                        remaining_min=remaining // 60)
-        else:
-            channels.append(ch)
-
-    if not channels:
-        # All channels on cooldown — show actual minimum remaining time
-        min_remaining = min(cooldowns) if cooldowns else 0
-        h = min_remaining // 3600
-        m = (min_remaining % 3600) // 60
-        await status_msg.edit_text(
-            f"⏳ *همه کانال‌ها در cooldown هستند!*\n\n"
-            f"آخرین پست کمتر از ۳ ساعت پیش ارسال شد.\n"
-            f"⏱ کمترین زمان باقی‌مانده: *{h}h {m:02d}m*",
-            parse_mode="Markdown",
-            reply_markup=back_kb(),
-        )
-        return
+    # FIX: Manual admin trigger bypasses cooldown — admin button must reach
+      # ALL active channels, not just those outside the auto-poster window.
+      channels = all_channels
 
     # ── Step 5: Load banner image once (shared across channels) ─────────────
     from app.services.content.rdp_post_builder import build_rdp_post
