@@ -1,9 +1,9 @@
 """
 RDP Plans Post Builder — beautiful tree-branch hierarchical layout for Telegram channels.
 
-Each plan is rendered as a branching tree card with emoji-rich specs + price.
-Post text is kept under 1024 chars so it sends as a single photo+caption message.
-Returns (post_text, image_url) — image reuses the UPGRADE TEAM brand banner.
+Each plan is rendered as a branching tree card with full labels + price.
+Post is text-only (no image) so there is no caption length constraint.
+Returns (post_text, image_url).
 """
 import random as _random
 
@@ -12,6 +12,7 @@ RDP_PLANS = [
     {
         "icon":  "🌿",
         "badge": "🥈",
+        "tier":  "Entry Level",
         "name":  "PRO",
         "cpu":   "4 vCPU",
         "ram":   "8 GB RAM",
@@ -22,6 +23,7 @@ RDP_PLANS = [
     {
         "icon":  "⚡",
         "badge": "🥇",
+        "tier":  "Standard",
         "name":  "POWER",
         "cpu":   "6 vCPU",
         "ram":   "16 GB RAM",
@@ -32,6 +34,7 @@ RDP_PLANS = [
     {
         "icon":  "💠",
         "badge": "💎",
+        "tier":  "Advanced",
         "name":  "ELITE",
         "cpu":   "8 vCPU",
         "ram":   "32 GB RAM",
@@ -42,6 +45,7 @@ RDP_PLANS = [
     {
         "icon":  "🔱",
         "badge": "🏆",
+        "tier":  "Ultimate",
         "name":  "ULTRA",
         "cpu":   "12 vCPU",
         "ram":   "64 GB RAM",
@@ -82,14 +86,15 @@ def _spaced(name: str) -> str:
 
 
 def _plan_card(p: dict) -> str:
-    """Render a single plan as a compact tree-branch card."""
+    """Render a single plan as a tree-branch card with full labels."""
     return "\n".join([
-        f"{p['icon']} ┌── {_spaced(p['name'])} ── {p['badge']}",
-        f"   ├── 🖥️ CPU  ➜ {p['cpu']}",
-        f"   ├── 🧠 RAM  ➜ {p['ram']}",
-        f"   ├── 💾 SSD  ➜ {p['disk']}",
-        f"   ├── 🌐 NET  ➜ {p['net']}",
-        f"   └── 💰 Price ➜ {p['price']} / month",
+        f"{p['icon']} ┌── {_spaced(p['name'])} ──────── {p['badge']}",
+        f"   ├── 🖥️  Processor → {p['cpu']}",
+        f"   ├── 🧠  Memory    → {p['ram']}",
+        f"   ├── 💾  Storage   → {p['disk']}",
+        f"   ├── 🌐  Network   → {p['net']}",
+        f"   ├── 🏷️  Tier      → {p['tier']}",
+        f"   └── 💰  Price     → {p['price']} / month",
     ])
 
 
