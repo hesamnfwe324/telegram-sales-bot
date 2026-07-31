@@ -523,10 +523,12 @@ async def _bg_rdp_plans_post(status_msg) -> None:
 
             try:
                 try:
-                    await _send_plans()
+                    await asyncio.wait_for(_send_plans(), timeout=90)
                 except FloodWaitError as fw:
                     await asyncio.sleep(fw.seconds + 3)
-                    await _send_plans()
+                    await asyncio.wait_for(_send_plans(), timeout=90)
+                except asyncio.TimeoutError:
+                    raise Exception("send timeout (>90s) — Telegram unreachable or file too large")
 
                 success += 1
                 logger.info("rdp_plans_sent", channel=ch.telegram_channel_id)
