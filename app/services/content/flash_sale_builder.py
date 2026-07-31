@@ -19,7 +19,7 @@ _DISCOUNTS = [20, 25, 30]
 
 _ADMIN_SIGNATURES = [
     "💎 Senior Admin | @VPS24H",
-    "👑 fficial Admin › @VPS24H",
+    "👑 Official Admin › @VPS24H",
     "⚡ Chief Admin | @VPS24H",
     "🔱 Director & Admin › @VPS24H",
     "⚜️ Verified Admin · @VPS24H",
@@ -41,8 +41,7 @@ def _sale_card(p: dict, discount: int) -> str:
         "   ├── Was:    $" + str(orig) + "/mo",
         "   └── NOW:    $" + str(sale) + "/mo  🔥 -" + str(discount) + "%",
     ]
-    return "
-".join(lines)
+    return "\n".join(lines)
 
 
 def build_flash_sale_post(
@@ -61,44 +60,26 @@ def build_flash_sale_post(
     expires_at = now_ny + timedelta(hours=duration_hours)
     expires_str = expires_at.strftime("%H:%M")
 
-    cards_txt = "
-
-".join(_sale_card(p, discount) for p in _PLANS)
+    cards_txt = "\n\n".join(_sale_card(p, discount) for p in _PLANS)
 
     tag_line = ""
     if channel_username:
         u = channel_username.lstrip("@")
-        tag_line = "
-📢 @" + u + " — Join for more deals"
+        tag_line = "\n📢 @" + u + " — Join for more deals"
 
     text = (
-        "⚡ FLASH SALE ⚡
-"
-        + _SEP + "
-
-"
-        + "🔥 LIMITED TIME — " + str(duration_hours) + " HOURS ONLY
-"
-        + "⏰ Expires: " + expires_str + " (New York Time)
-
-"
-        + cards_txt + "
-
-"
-        + _SEP + "
-
-"
-        + "✅ Full RDP Access · Root Admin
-"
-        + "✅ Instant Delivery · 24/7 Support
-"
-        + "✅ Monthly Billing · Easy Renewal
-"
+        "⚡ FLASH SALE ⚡\n"
+        + _SEP + "\n\n"
+        + "🔥 LIMITED TIME — " + str(duration_hours) + " HOURS ONLY\n"
+        + "⏰ Expires: " + expires_str + " (New York Time)\n\n"
+        + cards_txt + "\n\n"
+        + _SEP + "\n\n"
+        + "✅ Full RDP Access · Root Admin\n"
+        + "✅ Instant Delivery · 24/7 Support\n"
+        + "✅ Monthly Billing · Easy Renewal\n"
         + "📲 DM @VPS24H to claim your discount"
-        + tag_line + "
-"
-        + _SEP + "
-"
+        + tag_line + "\n"
+        + _SEP + "\n"
         + admin_sig
     )
 
