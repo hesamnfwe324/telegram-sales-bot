@@ -515,11 +515,21 @@ async def _bg_rdp_plans_post(status_msg) -> None:
 
             async def _send_plans(tg=tg, target=ch.telegram_channel_id,
                                   text=post_text, img=image_bytes, btns=plans_buttons):
+                _MAX_CAPTION = 1024
                 if img:
                     f = io.BytesIO(img)
                     f.name = "banner.jpg"
                     try:
-                        await tg.send_file(target, f, caption=text, parse_mode="md", buttons=btns)
+                        if len(text) <= _MAX_CAPTION:
+                            # Short enough — send as caption with buttons
+                            await tg.send_file(target, f, caption=text, parse_mode="md", buttons=btns)
+                        else:
+                            # Caption too long — send image silently, then text as reply
+                            sent_img = await tg.send_file(target, f)
+                            await tg.send_message(
+                                target, text, parse_mode="md",
+                                buttons=btns, reply_to=sent_img.id,
+                            )
                     finally:
                         f.close()
                         del f
