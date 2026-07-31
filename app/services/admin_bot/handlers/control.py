@@ -459,6 +459,7 @@ async def _bg_rdp_plans_post(status_msg) -> None:
     _step = "شروع"
     try:
         _step = "import"
+        import gc
         import io
         from telethon.errors import FloodWaitError
         from telethon.tl.custom import Button as TelethonButton
