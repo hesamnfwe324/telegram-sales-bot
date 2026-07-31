@@ -160,7 +160,7 @@ async def receive_topic(message: Message, state: FSMContext):
         logger.error("admin_post_generation_failed", error=str(e))
         err_detail = str(e)[:250] if str(e) else "Unknown error"
         await thinking_msg.edit_text(
-            f"❌ *Generation failed*\n\n```\n{err_detail}\n```\n_Check GROQ\_API\_KEY on Render._",
+            f"❌ *Generation failed*\n\n```\n{err_detail}\n```\n_Check GROQ\\_API\\_KEY on Render._",
             parse_mode="Markdown",
             reply_markup=back_kb(),
         )
