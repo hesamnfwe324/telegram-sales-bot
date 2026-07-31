@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     ALERT_DISK_THRESHOLD: int = 90
     HEALTH_CHECK_INTERVAL: int = 60
 
-    POST_DEFAULT_TIMEZONE: str = "Asia/Tehran"
+    POST_DEFAULT_TIMEZONE: str = "America/New_York"
     MAX_CHANNELS_PER_POST: int = 20
 
     JWT_ALGORITHM: str = "HS256"
