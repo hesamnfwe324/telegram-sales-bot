@@ -36,21 +36,25 @@ def build_announcement(content: dict[str, Any], slug: str, username: str | None,
     hashtags = " ".join(content.get("hashtags", []))
     link = _public_start_link(slug, username)
     return (
-        f"⚡️ {content['title']}\n\n"
-        f"{content['question']}\n\n"
-        "برای شرکت، روی لینک زیر بزن و پاسخ را در ربات ثبت کن:\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "        UPGRADE TEAM\n"
+        "      RDP SECURITY CHALLENGE\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🎯 {content['title']}\n\n"
+        f"💡 {content['question']}\n\n"
+        f"🎁 Reward: {content['reward']}\n"
+        f"⏱ Deadline: {end_text}\n\n"
+        "Join the challenge through the official bot:\n"
         f"👉 {link}\n\n"
-        f"🎁 جایزه: {content['reward']}\n"
-        f"⏳ مهلت شرکت: {end_text}\n"
-        "✅ فقط یک پاسخ برای هر نفر ثبت می‌شود؛ نتیجه بر اساس پاسخ درست و زمان ثبت اعلام می‌شود.\n\n"
+        "✅ One attempt per participant. Winners are selected by correctness and response time.\n\n"
         f"{hashtags}"
     )
 
 
 async def create_challenge(
     session: AsyncSession,
-    topic: str = "امنیت و سرعت RDP",
-    language: str = "fa",
+    topic: str = "RDP security and server performance",
+    language: str = "en",
     public_bot_username: str | None = None,
 ) -> Challenge:
     channel_result = await session.execute(
@@ -70,7 +74,7 @@ async def create_challenge(
     if not account:
         raise RuntimeError("No active Telegram account owns the configured channels")
 
-    content = await generate_challenge_content(topic, language)
+    content = await generate_challenge_content(topic, "en")
     now = datetime.now(timezone.utc)
     ends_at = now + timedelta(hours=settings.CHALLENGE_DURATION_HOURS)
     slug = _slugify(topic)
@@ -86,7 +90,7 @@ async def create_challenge(
         seo_keywords=content["seo_keywords"],
         reward=content["reward"],
         channel_ids=[str(channel.id) for channel in channels],
-        language=language,
+        language="en",
         status="active",
         starts_at=now,
         ends_at=ends_at,
@@ -133,8 +137,8 @@ async def publish_challenge(session: AsyncSession, challenge: Challenge) -> dict
 
 async def create_and_publish_challenge(
     session: AsyncSession,
-    topic: str = "امنیت و سرعت RDP",
-    language: str = "fa",
+    topic: str = "RDP security and server performance",
+    language: str = "en",
     public_bot_username: str | None = None,
 ) -> tuple[Challenge, dict]:
     challenge = await create_challenge(session, topic, language, public_bot_username)
@@ -244,14 +248,17 @@ async def run_challenge_scheduler() -> None:
                     active = await get_active_challenge(session)
                     if not active:
                         latest = await session.scalar(select(Challenge).order_by(desc(Challenge.created_at)).limit(1))
-                        due = latest is None or latest.created_at < datetime.now(timezone.utc) - timedelta(
-                            hours=settings.CHALLENGE_INTERVAL_HOURS
+                        due = (
+                            latest is None
+                            or latest.created_at
+                            < datetime.now(timezone.utc) - timedelta(hours=settings.CHALLENGE_INTERVAL_HOURS)
+                            or latest.language != "en"
                         )
                         if due:
                             challenge, _ = await create_and_publish_challenge(
                                 session,
-                                topic="ترفندهای جذاب RDP و امنیت سرور",
-                                language="fa",
+                                topic="RDP security, VPS reliability, and server protection",
+                                language="en",
                                 public_bot_username=get_public_bot_username(),
                             )
                             logger.info("automatic_challenge_created", challenge_id=str(challenge.id))

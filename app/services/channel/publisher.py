@@ -437,7 +437,11 @@ async def publish_post(
                     media_file_name = "video.mp4" if media_is_video else "image.jpg"
 
             if media_bytes:
-                caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
+                caption = (
+                    content[:MAX_CAPTION_LENGTH]
+                    if post.content_type == "challenge"
+                    else _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
+                )
                 file_obj = io.BytesIO(media_bytes)
                 file_obj.name = media_file_name
                 post_parse_mode = None if post.content_type == "challenge" else "md"
@@ -490,7 +494,11 @@ async def publish_post(
                     continue
 
             if not media_sent:
-                text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
+                text = (
+                    content[:MAX_TEXT_LENGTH]
+                    if post.content_type == "challenge"
+                    else _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
+                )
                 post_parse_mode = None if post.content_type == "challenge" else "md"
                 msg = await _send_with_flood_retry(
                     client.send_message,

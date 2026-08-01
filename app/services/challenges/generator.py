@@ -11,24 +11,9 @@ logger = get_logger(__name__)
 
 
 def _fallback_content(topic: str, language: str) -> dict[str, Any]:
-    if language == "fa":
-        return {
-            "title": f"چالش RDP: {topic}",
-            "question": f"کدام گزینه برای اتصال امن‌تر به یک سرور RDP توصیه می‌شود؟ موضوع: {topic}",
-            "answers": [
-                "فعال‌سازی احراز هویت چندمرحله‌ای و محدودکردن دسترسی",
-                "انتشار رمز عبور در یک کانال عمومی",
-                "استفاده از رمز عبور کوتاه و تکراری",
-                "بازگذاشتن پورت RDP برای همه اینترنت",
-            ],
-            "correct_answer": 0,
-            "reward": settings.CHALLENGE_DEFAULT_REWARD,
-            "hashtags": ["#چالش", "#RDP", "#سرور", "#امنیت_سایبری"],
-            "seo_keywords": ["RDP", "سرور مجازی", "امنیت سرور", "Remote Desktop"],
-        }
     return {
-        "title": f"RDP Challenge: {topic}",
-        "question": f"Which practice is safer for an RDP server? Topic: {topic}",
+        "title": "RDP Security Fundamentals",
+        "question": "Which practice is safest for protecting an RDP server?",
         "answers": [
             "Enable MFA and restrict access",
             "Post the password publicly",
@@ -36,7 +21,7 @@ def _fallback_content(topic: str, language: str) -> dict[str, Any]:
             "Leave RDP open to everyone",
         ],
         "correct_answer": 0,
-        "reward": settings.CHALLENGE_DEFAULT_REWARD,
+        "reward": "Upgrade Team reward for the winning participants",
         "hashtags": ["#Challenge", "#RDP", "#Server", "#CyberSecurity"],
         "seo_keywords": ["RDP", "VPS", "server security", "Remote Desktop"],
     }
@@ -46,6 +31,11 @@ def _clean_json(text: str) -> dict[str, Any]:
     fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
     payload = fenced.group(1) if fenced else text.strip()
     return json.loads(payload)
+
+
+def _is_english_only(value: str) -> bool:
+    """Reject Arabic/Persian and other non-ASCII script in public challenge copy."""
+    return all(ord(character) < 128 for character in value)
 
 
 def _validate_content(content: dict[str, Any], topic: str, language: str) -> dict[str, Any]:
@@ -64,11 +54,15 @@ def _validate_content(content: dict[str, Any], topic: str, language: str) -> dic
     content["reward"] = str(content["reward"])[:500]
     content["hashtags"] = [str(tag)[:80] for tag in content["hashtags"][:12]]
     content["seo_keywords"] = [str(keyword)[:120] for keyword in content["seo_keywords"][:12]]
+    public_fields = [content["title"], content["question"], *content["answers"], content["reward"]]
+    if not all(_is_english_only(value) for value in public_fields):
+        raise ValueError("Challenge content must be English-only")
     return content
 
 
-async def generate_challenge_content(topic: str, language: str = "fa") -> dict[str, Any]:
+async def generate_challenge_content(topic: str, language: str = "en") -> dict[str, Any]:
     """Generate a safe, educational engagement challenge with Grok."""
+    language = "en"
     if not settings.XAI_API_KEY:
         logger.warning("xai_key_not_configured_using_safe_fallback")
         return _fallback_content(topic, language)
@@ -83,12 +77,13 @@ async def generate_challenge_content(topic: str, language: str = "fa") -> dict[s
         "You create ethical Telegram engagement challenges for an RDP and VPS community. "
         "Return JSON only. Never request passwords, tokens, personal data, spam, fake activity, "
         "or unsafe access instructions. Keep the challenge educational and suitable for a public channel. "
-        "Use the requested language."
+        "Write every user-facing field in clear, natural English only. "
+        "Never use Persian, Arabic, or any other language, even if the topic is provided in another language."
     )
     prompt = f"""
 Create one exciting but truthful multiple-choice challenge about RDP, VPS, remote desktop,
 server reliability, or cybersecurity.
-Language: {language}
+Language: English only
 Topic: {topic}
 Return exactly this JSON shape:
 {{
@@ -98,7 +93,7 @@ Return exactly this JSON shape:
   "correct_answer": 0,
   "reward": "a transparent non-guaranteed reward description",
   "hashtags": ["#RDP", "#..."],
-  "seo_keywords": ["RDP", "VPS", "هشتگ یا کلیدواژه مرتبط"]
+  "seo_keywords": ["RDP", "VPS", "server security"]
 }}
 The correct_answer is a zero-based index. Make all four choices plausible.
 """

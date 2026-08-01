@@ -14,8 +14,8 @@ router = APIRouter(prefix="/challenges", tags=["challenges"])
 
 
 class CreateChallengeRequest(BaseModel):
-    topic: str = Field(default="ترفندهای جذاب RDP و امنیت سرور", min_length=2, max_length=500)
-    language: str = Field(default="fa", pattern="^(fa|en)$")
+    topic: str = Field(default="RDP security, VPS reliability, and server protection", min_length=2, max_length=500)
+    language: str = Field(default="en", pattern="^en$")
 
 
 @router.post("")
@@ -24,7 +24,7 @@ async def create_challenge(_: APIKeyDep, session: DBSession, body: CreateChallen
         challenge, results = await create_and_publish_challenge(
             session,
             topic=body.topic,
-            language=body.language,
+            language="en",
             public_bot_username=get_public_bot_username(),
         )
     except RuntimeError as exc:
@@ -43,7 +43,7 @@ async def create_challenge(_: APIKeyDep, session: DBSession, body: CreateChallen
 async def active_challenge(_: APIKeyDep, session: DBSession):
     challenge = await session.scalar(
         select(Challenge)
-        .where(Challenge.status == "active")
+        .where(Challenge.status == "active", Challenge.language == "en")
         .order_by(desc(Challenge.created_at))
         .limit(1)
     )

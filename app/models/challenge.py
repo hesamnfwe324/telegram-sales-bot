@@ -23,7 +23,7 @@ class Challenge(Base, TimestampMixin):
     seo_keywords: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     reward: Mapped[str] = mapped_column(String(500), nullable=False)
     channel_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    language: Mapped[str] = mapped_column(String(5), nullable=False, default="fa")
+    language: Mapped[str] = mapped_column(String(5), nullable=False, default="en")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

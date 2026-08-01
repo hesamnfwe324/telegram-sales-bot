@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     CHALLENGE_AUTO_ENABLED: bool = True
     CHALLENGE_INTERVAL_HOURS: int = 48
     CHALLENGE_DURATION_HOURS: int = 48
-    CHALLENGE_DEFAULT_REWARD: str = "یک ماه سرویس RDP رایگان برای برندگان"
+    CHALLENGE_DEFAULT_REWARD: str = "Upgrade Team reward for the winning participants"
 
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"

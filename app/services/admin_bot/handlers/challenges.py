@@ -16,28 +16,28 @@ router = Router()
 
 @router.message(Command("challenge"))
 async def create_challenge_command(message: Message):
-    topic = (message.text or "").partition(" ")[2].strip() or "ترفندهای جذاب RDP و امنیت سرور"
-    status_message = await message.answer("در حال ساخت و انتشار چالش در همه کانال‌های فعال...")
+    topic = (message.text or "").partition(" ")[2].strip() or "RDP security, VPS reliability, and server protection"
+    status_message = await message.answer("Building and publishing an English challenge to all active channels...")
     try:
         async with AsyncSessionLocal() as session:
             challenge, results = await create_and_publish_challenge(
                 session,
                 topic=topic[:500],
-                language="fa",
+                language="en",
                 public_bot_username=get_public_bot_username(),
             )
         published = sum(1 for result in results.values() if result.get("status") == "published")
         await status_message.edit_text(
-            f"✅ چالش ساخته و منتشر شد.\n\n"
-            f"عنوان: {challenge.title}\n"
-            f"کانال‌های موفق: {published}/{len(results)}\n"
-            f"لینک داخلی: `/start challenge_{challenge.slug}`\n\n"
-            "برای دیدن گزارش: /challenge_stats",
+            f"✅ Challenge created and published.\n\n"
+            f"Title: {challenge.title}\n"
+            f"Successful channels: {published}/{len(results)}\n"
+            f"Bot link: `/start challenge_{challenge.slug}`\n\n"
+            "View the report with /challenge_stats",
         )
     except Exception as exc:
         logger.error("manual_challenge_failed", error=str(exc))
         await status_message.edit_text(
-            "❌ ساخت چالش انجام نشد. مطمئن شوید حداقل یک کانال فعال و یک اکانت متصل وجود دارد."
+            "❌ Challenge creation failed. Make sure at least one active channel and one connected account are available."
         )
 
 
@@ -46,15 +46,15 @@ async def challenge_stats_command(message: Message):
     async with AsyncSessionLocal() as session:
         challenge = await session.scalar(select(Challenge).order_by(desc(Challenge.created_at)).limit(1))
         if not challenge:
-            await message.answer("هنوز چالشی ساخته نشده است.")
+            await message.answer("No challenge has been created yet.")
             return
         summary = await challenge_summary(session, challenge)
     await message.answer(
-        f"📊 گزارش آخرین چالش\n\n"
-        f"عنوان: {summary['title']}\n"
-        f"وضعیت: {summary['status']}\n"
-        f"شرکت‌کننده: {summary['participants']}\n"
-        f"پاسخ درست: {summary['correct_answers']}\n"
-        f"کانال‌ها: {summary['channels']}\n"
-        f"پایان: {summary['ends_at']}"
+        f"📊 Latest challenge report\n\n"
+        f"Title: {summary['title']}\n"
+        f"Status: {summary['status']}\n"
+        f"Participants: {summary['participants']}\n"
+        f"Correct answers: {summary['correct_answers']}\n"
+        f"Channels: {summary['channels']}\n"
+        f"Ends: {summary['ends_at']}"
     )
