@@ -29,7 +29,7 @@ FROM python:3.12-slim
 
   # Increased start-period to 120s: alembic + uvicorn startup can take 60-90s on free tier
   HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-      CMD curl -f http://localhost:${PORT:-10000}/api/healthz || exit 1
+      CMD curl -f http://localhost:${PORT:-10000}/api/readyz || exit 1
 
   CMD ["bash", "start.sh"]
   

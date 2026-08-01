@@ -5,7 +5,7 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: starter
-    healthCheckPath: /api/healthz
+    healthCheckPath: /api/readyz
     envVars:
       - key: SECRET_KEY
         generateValue: true
