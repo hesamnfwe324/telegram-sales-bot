@@ -9,10 +9,10 @@ from zoneinfo import ZoneInfo
 NEW_YORK = ZoneInfo("America/New_York")
 
 _PLANS = [
-    {"icon": "🌿", "badge": "🥈", "name": "PRO",   "tier": "Entry Level", "cpu": "4 vCPU",  "ram": "8 GB RAM",  "disk": "120 GB SSD", "net": "1 Gbps", "price": 16},
-    {"icon": "⚡",  "badge": "🥇", "name": "POWER", "tier": "Standard",    "cpu": "6 vCPU",  "ram": "16 GB RAM", "disk": "250 GB SSD", "net": "2 Gbps", "price": 28},
-    {"icon": "💠", "badge": "💎", "name": "ELITE", "tier": "Advanced",    "cpu": "8 vCPU",  "ram": "32 GB RAM", "disk": "500 GB SSD", "net": "2 Gbps", "price": 45},
-    {"icon": "🔱", "badge": "🏆", "name": "ULTRA", "tier": "Ultimate",    "cpu": "12 vCPU", "ram": "64 GB RAM", "disk": "1 TB SSD",   "net": "5 Gbps", "price": 75},
+    {"icon": "🌿", "badge": "🥈", "name": "PRO",   "tier": "Entry Level", "cpu": "4 vCPU",  "ram": "8 GB RAM",  "storage": "120 GB SSD", "net": "1 Gbps", "price": 16},
+    {"icon": "⚡",  "badge": "🥇", "name": "POWER", "tier": "Standard",    "cpu": "6 vCPU",  "ram": "16 GB RAM", "storage": "250 GB SSD", "net": "2 Gbps", "price": 28},
+    {"icon": "💠", "badge": "💎", "name": "ELITE", "tier": "Advanced",    "cpu": "8 vCPU",  "ram": "32 GB RAM", "storage": "500 GB SSD", "net": "2 Gbps", "price": 45},
+    {"icon": "🔱", "badge": "🏆", "name": "ULTRA", "tier": "Ultimate",    "cpu": "12 vCPU", "ram": "64 GB RAM", "storage": "1 TB SSD",   "net": "5 Gbps", "price": 75},
 ]
 
 _DISCOUNTS = [20, 25, 30]
@@ -33,13 +33,13 @@ def _sale_card(p: dict, discount: int) -> str:
     sale = round(orig * (1 - discount / 100))
     lines = [
         p["icon"] + " ┌── " + p["name"] + " " + p["badge"],
-        "   ├── CPU:     " + p["cpu"],
-        "   ├── RAM:     " + p["ram"],
-        "   ├── Storage: " + p["disk"],
-        "   ├── Network: " + p["net"],
-        "   ├── Tier:    " + p["tier"],
-        "   ├── Was:    $" + str(orig) + "/mo",
-        "   └── NOW:    $" + str(sale) + "/mo  🔥 -" + str(discount) + "%",
+        "   ├── Processor → " + p["cpu"],
+        "   ├── Memory    → " + p["ram"],
+        "   ├── Storage   → " + p["storage"],
+        "   ├── Network   → " + p["net"],
+        "   ├── Tier      → " + p["tier"],
+        "   ├── Was       → $" + str(orig) + " / month",
+        "   └── NOW       → $" + str(sale) + " / month  🔥 -" + str(discount) + "%",
     ]
     return "\n".join(lines)
 
