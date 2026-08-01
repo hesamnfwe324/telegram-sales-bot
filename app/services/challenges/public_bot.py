@@ -100,26 +100,17 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
         "<b>Join the official channels first</b>\n",
         "To unlock the bot, you must join every official Upgrade Team channel below. "
         "After joining, press <b>Check my membership</b>.",
-        "",
+        "\n<i>Your membership will be checked across all official channels automatically.</i>",
     ]
-    buttons: list[list[InlineKeyboardButton]] = []
-    if settings.REQUIRED_CHANNEL_FOLDER_LINK:
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text="📂 Open official channel list",
-                    url=settings.REQUIRED_CHANNEL_FOLDER_LINK,
-                )
-            ]
-        )
-    for item in statuses:
-        icon = "✅" if item["status"] == "joined" else "❌"
-        lines.append(f"{icon} {escape(item['name'] or 'Official channel')}")
-        if item["link"] and item["status"] != "joined":
-            buttons.append([InlineKeyboardButton(text=f"Join {item['name']}", url=item["link"])])
-        elif item["status"] == "unverified":
-            lines.append("<i>Membership cannot be verified yet. The bot must be an admin in this channel.</i>")
-    buttons.append([InlineKeyboardButton(text="🔄 Check my membership", callback_data="check_membership")])
+    buttons: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="📂 Join the official channels",
+                url=settings.REQUIRED_CHANNEL_FOLDER_LINK,
+            )
+        ],
+        [InlineKeyboardButton(text="🔄 Check my membership", callback_data="check_membership")],
+    ]
     await message.answer(
         "\n".join(lines),
         parse_mode=ParseMode.HTML,
