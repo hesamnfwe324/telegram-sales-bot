@@ -17,6 +17,7 @@ from app.core.logging import get_logger
 from sqlalchemy import select, func
 import uuid
 import os
+from pathlib import Path
 
 logger = get_logger(__name__)
 router = Router()
@@ -412,14 +413,27 @@ async def send_post_now(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "flash_sale")
 async def handle_flash_sale(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    status_msg = await callback.message.edit_text(
-        "⚡ *Building Flash Sale post...*",
-        parse_mode="Markdown",
+    logger.info(
+        "flash_sale_callback_received",
+        callback_id=callback.id,
+        admin_id=callback.from_user.id if callback.from_user else None,
     )
+    await state.clear()
     await callback.answer()
 
     try:
+        try:
+            status_msg = await callback.message.edit_text(
+                "⚡ *Building Flash Sale post...*",
+                parse_mode="Markdown",
+            )
+        except Exception as status_error:
+            logger.warning("flash_sale_status_edit_failed", error=str(status_error))
+            status_msg = await callback.message.answer(
+                "⚡ *Building Flash Sale post...*",
+                parse_mode="Markdown",
+            )
+
         from app.services.content.flash_sale_builder import build_flash_sale_post
 
         async with AsyncSessionLocal() as session:
@@ -448,6 +462,21 @@ async def handle_flash_sale(callback: CallbackQuery, state: FSMContext):
                 channel_username=ch_username,
                 duration_hours=2,
             )
+            logo_path = image_url.removeprefix("FILE:") if image_url else ""
+            # publishing.py -> handlers -> admin_bot -> services -> app -> repo root
+            logo_file = Path(__file__).resolve().parents[4] / logo_path
+            if not image_url or not image_url.startswith("FILE:") or not logo_file.is_file():
+                raise RuntimeError(f"Flash Sale logo is missing: {logo_file}")
+            if len(content) > 1020:
+                raise RuntimeError(
+                    f"Flash Sale caption is too long for Telegram: {len(content)} characters"
+                )
+            logger.info(
+                "flash_sale_logo_verified",
+                path=str(logo_file),
+                size_bytes=logo_file.stat().st_size,
+                channels=len(channels),
+            )
 
             post = Post(
                 account_id=account.id,
@@ -463,21 +492,31 @@ async def handle_flash_sale(callback: CallbackQuery, state: FSMContext):
             await session.refresh(post)
 
             from app.services.channel.publisher import publish_post as do_publish
-            pub_results = await do_publish(session, post)
+            pub_results = await do_publish(session, post, require_media=True)
             await session.commit()
 
         published = sum(1 for r in pub_results.values() if r.get("status") == "published")
         failed_count = sum(1 for r in pub_results.values() if r.get("status") == "error")
+        with_media = sum(
+            1 for r in pub_results.values()
+            if r.get("status") == "published" and r.get("has_media") is True
+        )
 
         await status_msg.edit_text(
             f"⚡ *Flash Sale Posted!*\n\n"
             f"📡 Channels: {len(channels)}\n"
-            f"✅ Published: `{published}`\n"
+            f"✅ Published with logo: `{with_media}`\n"
             f"❌ Failed: `{failed_count}`\n",
             parse_mode="Markdown",
             reply_markup=publishing_menu_kb(),
         )
-        logger.info("flash_sale_published", published=published, total=len(channels))
+        logger.info(
+            "flash_sale_published",
+            published=published,
+            published_with_logo=with_media,
+            failed=failed_count,
+            total=len(channels),
+        )
 
     except Exception as e:
         logger.error("flash_sale_handler_error", error=str(e))

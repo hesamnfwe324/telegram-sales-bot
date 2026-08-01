@@ -330,7 +330,19 @@ async def _get_channel_client(default_client, channel: TelegramChannel, session_
         return default_client, False
 
 
-async def publish_post(session: AsyncSession, post: Post) -> dict:
+async def publish_post(
+    session: AsyncSession,
+    post: Post,
+    *,
+    require_media: bool = False,
+) -> dict:
+    """Publish a post to all of its channels.
+
+    ``require_media`` is used by branded campaigns such as Flash Sale.  Those
+    posts must never silently degrade to a text-only message: if the image
+    cannot be loaded or Telegram rejects the photo, the channel is reported as
+    failed instead.
+    """
     if not _userbot_manager:
         logger.error("publisher_no_userbot_manager")
         return {}
@@ -461,8 +473,20 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
                     size_kb=len(media_bytes) // 1024,
                 )
             else:
-                logger.warning("all_media_sources_failed_falling_back_to_text",
-                               channel_id=str(channel_id))
+                reason = "required_media_unavailable" if require_media else "all_media_sources_failed"
+                logger.error(
+                    "required_media_unavailable" if require_media else "all_media_sources_failed",
+                    channel_id=str(channel_id),
+                    image_url=post.image_url or "",
+                )
+                if require_media:
+                    results[str(channel_id)] = {
+                        "status": "error",
+                        "reason": reason,
+                        "has_media": False,
+                        "media_type": None,
+                    }
+                    continue
 
             if not media_sent:
                 text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)

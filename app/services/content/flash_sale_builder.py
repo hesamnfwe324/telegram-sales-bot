@@ -26,6 +26,7 @@ _ADMIN_SIGNATURES = [
 ]
 
 _SEP = "━" * 28
+_TELEGRAM_CAPTION_LIMIT = 1020
 
 
 def _sale_card(p: dict, discount: int) -> str:
@@ -82,5 +83,11 @@ def build_flash_sale_post(
         + _SEP + "\n"
         + admin_sig
     )
+
+    # Telegram captions are limited to 1024 characters. Keep a small safety
+    # margin for Markdown/entities added by the publisher so Flash Sale always
+    # remains a photo + caption message instead of falling back to text.
+    if len(text) > _TELEGRAM_CAPTION_LIMIT:
+        text = text[:_TELEGRAM_CAPTION_LIMIT - 1].rstrip() + "…"
 
     return text, "FILE:app/assets/upgrade_team_logo.jpg"
