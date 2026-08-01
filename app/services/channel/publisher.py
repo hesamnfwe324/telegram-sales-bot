@@ -391,97 +391,78 @@ async def publish_post(session: AsyncSession, post: Post) -> dict:
 
             media_sent = False
 
-            # ── UPGRADE TEAM banner — always sent with every channel post ─────────
-            banner_bytes = _read_local_file(_BANNER_REL_PATH)
-            if banner_bytes:
+            # ── Image selection (priority order) ─────────────────────────────────
+            # 1. post.image_url FILE: path (e.g. flash-sale logo, uploaded image)
+            # 2. Default Upgrade Team banner
+            # 3. post.image_url http URL (download from web)
+            # 4. Text-only fallback
+            media_bytes: bytes | None = None
+            media_file_name = "image.jpg"
+            media_is_video = False
+
+            if post.image_url and post.image_url.startswith(_FILE_MARKER):
+                rel_path = post.image_url[len(_FILE_MARKER):]
+                media_bytes = _read_local_file(rel_path)
+                if media_bytes:
+                    media_file_name = Path(rel_path).name
+                    logger.info("media_loaded_from_post_file", path=rel_path,
+                                size_kb=len(media_bytes) // 1024)
+                else:
+                    logger.warning("post_file_image_not_found_falling_back_to_banner",
+                                   path=rel_path, channel_id=str(channel_id))
+
+            if not media_bytes:
+                media_bytes = _read_local_file(_BANNER_REL_PATH)
+                if media_bytes:
+                    media_file_name = "upgrade_team_banner.jpg"
+                    logger.info("media_loaded_from_banner", size_kb=len(media_bytes) // 1024)
+
+            if not media_bytes and post.image_url and not post.image_url.startswith(_FILE_MARKER):
+                image_urls = _parse_image_urls(post.image_url)
+                media_bytes = await _download_with_fallbacks(image_urls)
+                if media_bytes:
+                    media_is_video = _is_video_url(image_urls[0])
+                    media_file_name = "video.mp4" if media_is_video else "image.jpg"
+
+            if media_bytes:
                 caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
-                file_obj = io.BytesIO(banner_bytes)
-                file_obj.name = "upgrade_team_banner.jpg"
-                msg = await _send_with_flood_retry(
-                    client.send_file,
-                    channel.telegram_channel_id,
-                    file_obj,
-                    caption=caption,
-                    parse_mode="md",
-                )
+                file_obj = io.BytesIO(media_bytes)
+                file_obj.name = media_file_name
+                if media_is_video:
+                    msg = await _send_with_flood_retry(
+                        client.send_file,
+                        channel.telegram_channel_id,
+                        file_obj,
+                        caption=caption,
+                        parse_mode="md",
+                        supports_streaming=True,
+                    )
+                else:
+                    msg = await _send_with_flood_retry(
+                        client.send_file,
+                        channel.telegram_channel_id,
+                        file_obj,
+                        caption=caption,
+                        parse_mode="md",
+                    )
                 await _add_contact_button(channel.telegram_channel_id, msg.id)
                 results[str(channel_id)] = {
                     "status": "published",
                     "message_id": msg.id,
                     "has_media": True,
-                    "media_type": "image",
+                    "media_type": "video" if media_is_video else "image",
                 }
                 media_sent = True
                 logger.info(
-                    "post_published_with_banner",
+                    "post_published_with_media",
                     channel_id=str(channel_id),
                     msg_id=msg.id,
-                    size_kb=len(banner_bytes) // 1024,
+                    file_name=media_file_name,
+                    size_kb=len(media_bytes) // 1024,
                 )
             else:
-                # Banner missing — fall back to post's own image_url
-                logger.warning(
-                    "banner_not_found_falling_back_to_original_media",
-                    path=_BANNER_REL_PATH,
-                    channel_id=str(channel_id),
-                )
-                if post.image_url:
-                    if post.image_url.startswith(_FILE_MARKER):
-                        rel_path = post.image_url[len(_FILE_MARKER):]
-                        media_bytes = _read_local_file(rel_path)
-                    else:
-                        image_urls = _parse_image_urls(post.image_url)
-                        media_bytes = await _download_with_fallbacks(image_urls)
-
-                    if media_bytes:
-                        caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
-                        is_video = (
-                            False if post.image_url.startswith(_FILE_MARKER)
-                            else _is_video_url(image_urls[0])
-                        )
-                        file_obj = io.BytesIO(media_bytes)
-
-                        if is_video:
-                            file_obj.name = "video.mp4"
-                            msg = await _send_with_flood_retry(
-                                client.send_file,
-                                channel.telegram_channel_id,
-                                file_obj,
-                                caption=caption,
-                                parse_mode="md",
-                                supports_streaming=True,
-                            )
-                            media_type = "video"
-                        else:
-                            file_obj.name = "image.jpg"
-                            msg = await _send_with_flood_retry(
-                                client.send_file,
-                                channel.telegram_channel_id,
-                                file_obj,
-                                caption=caption,
-                                parse_mode="md",
-                            )
-                            media_type = "image"
-
-                        results[str(channel_id)] = {
-                            "status": "published",
-                            "message_id": msg.id,
-                            "has_media": True,
-                            "media_type": media_type,
-                        }
-                        media_sent = True
-                        logger.info(
-                            "post_published_with_media",
-                            channel_id=str(channel_id),
-                            msg_id=msg.id,
-                            media_type=media_type,
-                            size_kb=len(media_bytes) // 1024,
-                        )
-                    else:
-                        logger.warning(
-                            "all_media_downloads_failed_falling_back_to_text",
-                            channel_id=str(channel_id),
-                        )
+                logger.warning("all_media_sources_failed_falling_back_to_text",
+                               channel_id=str(channel_id))
 
             if not media_sent:
                 text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
