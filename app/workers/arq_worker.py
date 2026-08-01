@@ -27,12 +27,23 @@ async def shutdown(ctx):
 
 
 def _parse_redis_settings(url: str) -> RedisSettings:
+    """Parse a redis:// or rediss:// URL into an ARQ RedisSettings object.
+
+    Fixes:
+    - rediss:// (SSL) was previously ignored — ssl=True is now set correctly.
+    - Default database falls back to 0 (not 1) when the path is empty or "/".
+    """
     parsed = urllib.parse.urlparse(url)
+    use_ssl = parsed.scheme == "rediss"
+    # path is "/0", "/1", etc.  Strip the leading slash; default to 0.
+    db_str = parsed.path.lstrip("/")
+    database = int(db_str) if db_str.isdigit() else 0
     return RedisSettings(
         host=parsed.hostname or "localhost",
         port=parsed.port or 6379,
-        database=int(parsed.path.lstrip("/") or 1),
+        database=database,
         password=parsed.password,
+        ssl=use_ssl,
     )
 
 

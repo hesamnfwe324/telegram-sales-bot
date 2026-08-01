@@ -26,6 +26,8 @@ class UserBotManager:
       self._reconnect_failures: dict[str, int] = {}
       self._handlers_registered: set[str] = set()
       self._running = False
+      self._health_task = None
+      self._keeper_task = None
 
   async def load_accounts(self) -> None:
       async with AsyncSessionLocal() as session:
@@ -139,7 +141,7 @@ class UserBotManager:
       - Runs forever as long as the process is alive.
       """
       logger.info("online_keeper_started", interval_sec=ONLINE_PING_INTERVAL)
-      while True:
+      while self._running:
           try:
               for account_id, client in list(self._clients.items()):
                   if client.is_connected:
@@ -173,12 +175,16 @@ class UserBotManager:
   async def start(self) -> None:
       self._running = True
       await self.load_accounts()
-      asyncio.create_task(self.health_check_loop())
-      asyncio.create_task(self.online_keeper_loop())
+      self._health_task = asyncio.create_task(self.health_check_loop())
+      self._keeper_task = asyncio.create_task(self.online_keeper_loop())
       logger.info("userbot_manager_started", accounts=len(self._clients))
 
   async def stop(self) -> None:
       self._running = False
+      # Cancel background loops immediately instead of waiting for the next sleep tick.
+      for task in (self._health_task, self._keeper_task):
+          if task and not task.done():
+              task.cancel()
       for client in self._clients.values():
           try:
               await client.disconnect()

@@ -7,7 +7,7 @@ from openai import AsyncOpenAI, RateLimitError, AuthenticationError
 from app.core.config import settings
 from app.core.logging import get_logger
 from typing import Optional, List, AsyncIterator
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, retry_if_exception
 import asyncio
 import time
 
@@ -88,7 +88,7 @@ def _is_retryable(exc: Exception) -> bool:
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(Exception),
+    retry=retry_if_exception(_is_retryable),   # never retry quota/auth errors
     reraise=True,
 )
 async def generate_reply(

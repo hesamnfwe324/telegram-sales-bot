@@ -186,7 +186,7 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
-    for task in (_auto_poster_task, _userbot_task):
+    for task in (_rdp_pool_task, _auto_poster_task, _userbot_task):
         if task:
             task.cancel()
             try:
