@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
+from app.models.channel import TelegramChannel
 from app.models.challenge import Challenge
 from app.models.public_user import PublicUser
 from app.services.challenges.service import (
@@ -36,6 +37,92 @@ _polling_task: asyncio.Task | None = None
 
 def get_public_bot_username() -> str | None:
     return _username or settings.PUBLIC_BOT_USERNAME or None
+
+
+def _channel_link(channel: TelegramChannel) -> str | None:
+    metadata = channel.metadata_ or {}
+    invite_link = metadata.get("invite_link") or metadata.get("join_link")
+    if invite_link:
+        return str(invite_link)
+    if channel.username:
+        return f"https://t.me/{channel.username.lstrip('@')}"
+    return None
+
+
+async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str | None]]]:
+    """Fail closed unless the public bot verifies every active channel."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(TelegramChannel)
+            .where(TelegramChannel.is_active.is_(True))
+            .order_by(TelegramChannel.created_at)
+        )
+        channels = list(result.scalars().all())
+
+    if not channels or _bot is None:
+        return False, [
+            {
+                "name": "Official channels",
+                "status": "unverified",
+                "link": None,
+            }
+        ]
+
+    async def check(channel: TelegramChannel) -> dict[str, str | None]:
+        link = _channel_link(channel)
+        name = channel.display_name or channel.username or str(channel.telegram_channel_id)
+        try:
+            member = await _bot.get_chat_member(
+                chat_id=channel.telegram_channel_id,
+                user_id=telegram_id,
+            )
+            raw_status = getattr(member.status, "value", member.status)
+            is_member = raw_status in {"creator", "administrator", "member"}
+            if raw_status == "restricted":
+                is_member = bool(getattr(member, "is_member", False))
+            return {"name": name, "status": "joined" if is_member else "not_joined", "link": link}
+        except Exception as exc:
+            logger.warning(
+                "required_channel_membership_check_failed",
+                channel_id=channel.telegram_channel_id,
+                error=str(exc),
+            )
+            return {"name": name, "status": "unverified", "link": link}
+
+    statuses = await asyncio.gather(*(check(channel) for channel in channels))
+    return all(item["status"] == "joined" for item in statuses), list(statuses)
+
+
+async def _send_membership_gate(message: Message, statuses: list[dict[str, str | None]] | None = None) -> None:
+    if statuses is None:
+        _, statuses = await _check_membership(message.from_user.id)
+    lines = [
+        "<b>Join the official channels first</b>\n",
+        "To unlock the bot, you must join every official Upgrade Team channel below. "
+        "After joining, press <b>Check my membership</b>.",
+        "",
+    ]
+    buttons: list[list[InlineKeyboardButton]] = []
+    for item in statuses:
+        icon = "✅" if item["status"] == "joined" else "❌"
+        lines.append(f"{icon} {escape(item['name'] or 'Official channel')}")
+        if item["link"] and item["status"] != "joined":
+            buttons.append([InlineKeyboardButton(text=f"Join {item['name']}", url=item["link"])])
+        elif item["status"] == "unverified":
+            lines.append("<i>Membership cannot be verified yet. The bot must be an admin in this channel.</i>")
+    buttons.append([InlineKeyboardButton(text="🔄 Check my membership", callback_data="check_membership")])
+    await message.answer(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+
+
+async def _membership_required(message: Message) -> bool:
+    allowed, statuses = await _check_membership(message.from_user.id)
+    if not allowed:
+        await _send_membership_gate(message, statuses)
+    return allowed
 
 
 def _answer_keyboard(slug: str, answers: list[str]) -> InlineKeyboardMarkup:
@@ -149,6 +236,8 @@ async def start(message: Message):
     payload = args[1].strip() if len(args) > 1 else ""
     referral_code = payload.removeprefix("ref_") if payload.startswith("ref_") else None
     slug = payload.removeprefix("challenge_") if payload.startswith("challenge_") else ""
+    if not await _membership_required(message):
+        return
     user = await _load_user(message, referral_code=referral_code)
     async with AsyncSessionLocal() as session:
         challenge = (
@@ -175,6 +264,15 @@ async def start(message: Message):
 
 @router.callback_query(F.data.startswith("terms_accept"))
 async def accept_terms_callback(callback: CallbackQuery):
+    if _bot is None:
+        await callback.answer("Membership verification is unavailable. Please try again.", show_alert=True)
+        return
+    allowed, statuses = await _check_membership(callback.from_user.id)
+    if not allowed:
+        await callback.answer("Join every official channel first.", show_alert=True)
+        if callback.message:
+            await _send_membership_gate(callback.message, statuses)
+        return
     parts = (callback.data or "").split(":", 1)
     slug = parts[1] if len(parts) == 2 and parts[1] else ""
     user = callback.from_user
@@ -201,6 +299,24 @@ async def accept_terms_callback(callback: CallbackQuery):
             )
 
 
+@router.callback_query(F.data == "check_membership")
+async def check_membership_callback(callback: CallbackQuery):
+    allowed, statuses = await _check_membership(callback.from_user.id)
+    if not allowed:
+        await callback.answer("Some channels are still missing.", show_alert=True)
+        if callback.message:
+            await _send_membership_gate(callback.message, statuses)
+        return
+    await callback.answer("Membership confirmed.")
+    if callback.message:
+        await callback.message.answer(
+            "<b>Membership confirmed.</b>\n\n"
+            "You can now continue to registration and enter the active challenge.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=_registration_keyboard(),
+        )
+
+
 @router.callback_query(F.data == "challenge_help")
 async def challenge_help_callback(callback: CallbackQuery):
     await callback.answer()
@@ -219,6 +335,10 @@ async def challenge_help_callback(callback: CallbackQuery):
 async def active_challenge_callback(callback: CallbackQuery):
     await callback.answer()
     if callback.message:
+        allowed, statuses = await _check_membership(callback.from_user.id)
+        if not allowed:
+            await _send_membership_gate(callback.message, statuses)
+            return
         async with AsyncSessionLocal() as session:
             public_user = await session.scalar(
                 select(PublicUser).where(PublicUser.telegram_id == callback.from_user.id)
@@ -237,6 +357,12 @@ async def active_challenge_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "my_referral")
 async def referral_callback(callback: CallbackQuery):
+    allowed, statuses = await _check_membership(callback.from_user.id)
+    if not allowed:
+        await callback.answer("Join every official channel first.", show_alert=True)
+        if callback.message:
+            await _send_membership_gate(callback.message, statuses)
+        return
     user = callback.from_user
     async with AsyncSessionLocal() as session:
         public_user, _ = await get_or_create_public_user(session, user.id, user.username, user.full_name)
@@ -265,6 +391,10 @@ async def answer(callback: CallbackQuery):
         return
 
     async with AsyncSessionLocal() as session:
+        allowed, _ = await _check_membership(callback.from_user.id)
+        if not allowed:
+            await callback.answer("Your channel membership must be verified first.", show_alert=True)
+            return
         challenge = await session.scalar(select(Challenge).where(Challenge.slug == slug))
         if not challenge or challenge.status != "active":
             await callback.answer("This challenge has ended.", show_alert=True)
@@ -312,6 +442,8 @@ async def answer(callback: CallbackQuery):
 
 @router.message(Command("leaderboard"))
 async def show_leaderboard(message: Message):
+    if not await _membership_required(message):
+        return
     async with AsyncSessionLocal() as session:
         challenge = await get_active_challenge(session)
         if not challenge:
@@ -334,6 +466,8 @@ async def show_leaderboard_callback(callback: CallbackQuery):
 
 @router.message(Command("profile"))
 async def show_profile(message: Message):
+    if not await _membership_required(message):
+        return
     user = await _load_user(message)
     if user.terms_accepted_at is None:
         await _send_registration(message, None, user)
@@ -352,6 +486,8 @@ async def show_profile(message: Message):
 
 @router.message(Command("referral"))
 async def show_referral(message: Message):
+    if not await _membership_required(message):
+        return
     user = await _load_user(message)
     link = public_referral_link(user.referral_code, get_public_bot_username())
     await message.answer(
@@ -364,6 +500,8 @@ async def show_referral(message: Message):
 
 @router.message(Command("challenges"))
 async def challenge_help(message: Message):
+    if not await _membership_required(message):
+        return
     await message.answer(
         "<b>UPGRADE TEAM CHALLENGES</b>\n\n"
         "Open the latest challenge link from our channel and select one answer.\n"

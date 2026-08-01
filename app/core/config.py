@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     XAI_MODEL: str = "grok-3-mini"
 
     CHALLENGE_AUTO_ENABLED: bool = True
-    CHALLENGE_INTERVAL_HOURS: int = 48
-    CHALLENGE_DURATION_HOURS: int = 48
+    CHALLENGE_INTERVAL_HOURS: int = 4
+    CHALLENGE_DURATION_HOURS: int = 4
     CHALLENGE_DEFAULT_REWARD: str = "Upgrade Team reward for the winning participants"
     CHALLENGE_REFERRAL_POINTS: int = 3
 

@@ -99,8 +99,10 @@ async def generate_challenge_content(topic: str, language: str = "en") -> dict[s
     )
     prompt = f"""
 Create one exciting but truthful multiple-choice challenge about RDP, VPS, remote desktop,
-server reliability, or cybersecurity. Make it scenario-based and useful for an RDP operator,
-not a trivial definition. All four options should be plausible, with one clearly best answer.
+server reliability, or cybersecurity. If the topic is AI-selected, independently choose the
+most engaging and useful specific angle for today's audience. Prefer a short real-world
+scenario, a surprising operational trade-off, or a practical security decision over a trivial
+definition. All four options should be plausible, with one clearly best answer.
 Language: English only
 Topic: {topic}
 Return exactly this JSON shape:

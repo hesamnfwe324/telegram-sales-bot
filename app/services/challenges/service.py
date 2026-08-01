@@ -351,7 +351,11 @@ async def run_challenge_scheduler() -> None:
                         if due:
                             challenge, _ = await create_and_publish_challenge(
                                 session,
-                                topic="RDP security, VPS reliability, and server protection",
+                                topic=(
+                                    "AI-selected RDP challenge: choose the most engaging, "
+                                    "practical and surprising angle for RDP, VPS reliability, "
+                                    "remote access or server security"
+                                ),
                                 language="en",
                                 public_bot_username=get_public_bot_username(),
                             )
