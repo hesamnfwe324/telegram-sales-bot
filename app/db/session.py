@@ -26,7 +26,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     from app.db.base import Base
     from app.models import (  # noqa: F401
-        account, customer, conversation, lead, channel, post, knowledge, alert, admin, challenge
+        account, customer, conversation, lead, channel, post, knowledge, alert, admin, challenge, public_user
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

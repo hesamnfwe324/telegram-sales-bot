@@ -12,6 +12,7 @@ from app.models.account import TelegramAccount
 from app.models.challenge import Challenge, ChallengeParticipant
 from app.models.channel import TelegramChannel
 from app.models.post import Post
+from app.models.public_user import PublicUser
 from app.services.challenges.generator import generate_challenge_content
 
 logger = get_logger(__name__)
@@ -29,6 +30,79 @@ def _public_start_link(slug: str, username: str | None) -> str:
     if username:
         return f"https://t.me/{username.lstrip('@')}?start=challenge_{slug}"
     return f"/start challenge_{slug}"
+
+
+def _referral_code() -> str:
+    return f"U{uuid.uuid4().hex[:10].upper()}"
+
+
+def public_referral_link(referral_code: str, username: str | None) -> str:
+    if username:
+        return f"https://t.me/{username.lstrip('@')}?start=ref_{referral_code}"
+    return f"/start ref_{referral_code}"
+
+
+async def get_or_create_public_user(
+    session: AsyncSession,
+    telegram_id: int,
+    username: str | None,
+    display_name: str | None,
+    referral_code: str | None = None,
+) -> tuple[PublicUser, bool]:
+    now = datetime.now(timezone.utc)
+    user = await session.scalar(select(PublicUser).where(PublicUser.telegram_id == telegram_id))
+    created = False
+    if user is None:
+        referred_by = None
+        if referral_code:
+            referred_by = await session.scalar(
+                select(PublicUser).where(PublicUser.referral_code == referral_code, PublicUser.telegram_id != telegram_id)
+            )
+        user = PublicUser(
+            telegram_id=telegram_id,
+            username=username,
+            display_name=display_name,
+            referral_code=_referral_code(),
+            referred_by_id=referred_by.id if referred_by else None,
+            is_active=True,
+            total_points=0,
+            challenge_count=0,
+            correct_answers=0,
+            referral_count=0,
+            referral_points=0,
+            last_seen_at=now,
+            metadata_={"referral_code_used": referral_code} if referred_by else {},
+        )
+        session.add(user)
+        await session.flush()
+        created = True
+    else:
+        user.username = username
+        user.display_name = display_name
+        user.last_seen_at = now
+    return user, created
+
+
+async def accept_terms(
+    session: AsyncSession,
+    user: PublicUser,
+) -> None:
+    if user.terms_accepted_at is not None:
+        return
+    user.terms_accepted_at = datetime.now(timezone.utc)
+    if user.referred_by_id and not (user.metadata_ or {}).get("referral_rewarded"):
+        referrer = await session.scalar(select(PublicUser).where(PublicUser.id == user.referred_by_id))
+        if referrer:
+            referrer.referral_count += 1
+            referrer.referral_points += settings.CHALLENGE_REFERRAL_POINTS
+            referrer.total_points += settings.CHALLENGE_REFERRAL_POINTS
+            user.metadata_ = {
+                **(user.metadata_ or {}),
+                "referral_rewarded": True,
+                "referral_rewarded_at": datetime.now(timezone.utc).isoformat(),
+            }
+    await session.commit()
+    await session.refresh(user)
 
 
 def build_announcement(content: dict[str, Any], slug: str, username: str | None, ends_at: datetime) -> str:
@@ -84,6 +158,7 @@ async def create_challenge(
         topic=topic,
         announcement="",
         question=content["question"],
+        learning_note=content.get("learning_note"),
         answers=content["answers"],
         correct_answer=content["correct_answer"],
         hashtags=content["hashtags"],
@@ -168,6 +243,7 @@ async def register_participant(
     telegram_id: int,
     username: str | None,
     display_name: str | None,
+    public_user: PublicUser | None = None,
 ) -> ChallengeParticipant:
     result = await session.execute(
         select(ChallengeParticipant).where(
@@ -183,10 +259,16 @@ async def register_participant(
             username=username,
             display_name=display_name,
             joined_at=datetime.now(timezone.utc),
+            public_user_id=public_user.id if public_user else None,
         )
         session.add(participant)
+        if public_user:
+            public_user.challenge_count += 1
         await session.commit()
         await session.refresh(participant)
+    elif public_user and participant.public_user_id is None:
+        participant.public_user_id = public_user.id
+        await session.commit()
     return participant
 
 
@@ -206,6 +288,12 @@ async def submit_answer(
         "answer_index": answer_index,
         "answered_at": datetime.now(timezone.utc).isoformat(),
     }
+    if participant.public_user_id:
+        user = await session.scalar(select(PublicUser).where(PublicUser.id == participant.public_user_id))
+        if user:
+            user.total_points += participant.points
+            if participant.answer_correct:
+                user.correct_answers += 1
     await session.commit()
     return participant.answer_correct
 
@@ -234,6 +322,7 @@ async def challenge_summary(session: AsyncSession, challenge: Challenge) -> dict
         "slug": challenge.slug,
         "title": challenge.title,
         "status": challenge.status,
+        "learning_note": challenge.learning_note,
         "participants": participants or 0,
         "correct_answers": correct or 0,
         "channels": len(challenge.channel_ids or []),

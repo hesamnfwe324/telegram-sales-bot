@@ -14,10 +14,14 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.challenge import Challenge
+from app.models.public_user import PublicUser
 from app.services.challenges.service import (
+    accept_terms,
     challenge_summary,
     get_active_challenge,
+    get_or_create_public_user,
     leaderboard,
+    public_referral_link,
     register_participant,
     submit_answer,
 )
@@ -59,10 +63,93 @@ def _challenge_text(challenge: Challenge) -> str:
     )
 
 
+def _registration_keyboard(payload: str = "") -> InlineKeyboardMarkup:
+    suffix = f":{payload}" if payload else ""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Join the challenge", callback_data=f"terms_accept{suffix}")],
+            [InlineKeyboardButton(text="How it works", callback_data="challenge_help")],
+        ]
+    )
+
+
+def _profile_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🎯 Active challenge", callback_data="active_challenge"),
+                InlineKeyboardButton(text="🔗 Invite friends", callback_data="my_referral"),
+            ],
+            [InlineKeyboardButton(text="🏆 Leaderboard", callback_data="show_leaderboard")],
+        ]
+    )
+
+
+async def _load_user(message: Message, referral_code: str | None = None):
+    user = message.from_user
+    async with AsyncSessionLocal() as session:
+        public_user, _ = await get_or_create_public_user(
+            session,
+            user.id,
+            user.username,
+            user.full_name,
+            referral_code=referral_code,
+        )
+        await session.commit()
+        await session.refresh(public_user)
+        return public_user
+
+
+async def _send_registration(message: Message, challenge: Challenge | None, user) -> None:
+    context = "the active RDP security challenge" if challenge else "the Upgrade Team community"
+    await message.answer(
+        "<b>Welcome to Upgrade Team Challenges</b>\n\n"
+        "A public learning and competition space for RDP, VPS and server-security professionals.\n"
+        f"To enter {context}, confirm that you want to participate.\n\n"
+        "<b>How it works</b>\n"
+        "• one verified Telegram identity per person\n"
+        "• one answer per challenge\n"
+        "• points for correct answers and referrals\n"
+        "• fair, transparent leaderboard results\n\n"
+        "<i>By joining, you agree to use the challenge only for lawful educational participation. "
+        "Never share passwords, tokens or private server access.</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_registration_keyboard(challenge.slug if challenge else ""),
+    )
+
+
+async def _send_challenge(message: Message, challenge: Challenge, public_user) -> None:
+    async with AsyncSessionLocal() as session:
+        current_user = await session.scalar(
+            select(PublicUser).where(PublicUser.telegram_id == message.from_user.id)
+        )
+        if current_user is None or current_user.terms_accepted_at is None:
+            await _send_registration(message, challenge, public_user)
+            return
+        participant = await register_participant(
+            session,
+            challenge,
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.full_name,
+            public_user=current_user,
+        )
+    await message.answer(
+        _challenge_text(challenge),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_answer_keyboard(challenge.slug, challenge.answers)
+        if not participant.answer_submitted
+        else None,
+    )
+
+
 @router.message(CommandStart())
 async def start(message: Message):
     args = (message.text or "").split(maxsplit=1)
-    slug = args[1].removeprefix("challenge_") if len(args) > 1 else ""
+    payload = args[1].strip() if len(args) > 1 else ""
+    referral_code = payload.removeprefix("ref_") if payload.startswith("ref_") else None
+    slug = payload.removeprefix("challenge_") if payload.startswith("challenge_") else ""
+    user = await _load_user(message, referral_code=referral_code)
     async with AsyncSessionLocal() as session:
         challenge = (
             await session.scalar(
@@ -71,31 +158,100 @@ async def start(message: Message):
             if slug
             else await get_active_challenge(session)
         )
-        if not challenge or challenge.status != "active":
-            await message.answer(
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                "<b>UPGRADE TEAM</b>\n"
-                "<b>RDP SECURITY CHALLENGE</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━\n\n"
-                "There is no active challenge right now.\n"
-                "Please check back soon.",
-                parse_mode=ParseMode.HTML,
-            )
-            return
-        user = message.from_user
-        participant = await register_participant(
-            session,
-            challenge,
-            user.id,
-            user.username,
-            user.full_name,
-        )
+    if user.terms_accepted_at is None:
+        await _send_registration(message, challenge if challenge and challenge.status == "active" else None, user)
+        return
+    if not challenge or challenge.status != "active":
         await message.answer(
-            _challenge_text(challenge),
+            "<b>Upgrade Team Challenges</b>\n\n"
+            "There is no active challenge right now. Your profile is ready and you will be notified "
+            "when the next RDP challenge opens.",
             parse_mode=ParseMode.HTML,
-            reply_markup=_answer_keyboard(challenge.slug, challenge.answers)
-            if not participant.answer_submitted
-            else None,
+            reply_markup=_profile_keyboard(),
+        )
+        return
+    await _send_challenge(message, challenge, user)
+
+
+@router.callback_query(F.data.startswith("terms_accept"))
+async def accept_terms_callback(callback: CallbackQuery):
+    parts = (callback.data or "").split(":", 1)
+    slug = parts[1] if len(parts) == 2 and parts[1] else ""
+    user = callback.from_user
+    async with AsyncSessionLocal() as session:
+        public_user, _ = await get_or_create_public_user(
+            session, user.id, user.username, user.full_name
+        )
+        await accept_terms(session, public_user)
+        challenge = (
+            await session.scalar(select(Challenge).where(Challenge.slug == slug, Challenge.language == "en"))
+            if slug
+            else await get_active_challenge(session)
+        )
+    await callback.answer("Registration confirmed.")
+    if callback.message:
+        await callback.message.edit_reply_markup(reply_markup=None)
+        if challenge and challenge.status == "active":
+            await _send_challenge(callback.message, challenge, public_user)
+        else:
+            await callback.message.answer(
+                "Your profile is active. There is no live challenge at the moment.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=_profile_keyboard(),
+            )
+
+
+@router.callback_query(F.data == "challenge_help")
+async def challenge_help_callback(callback: CallbackQuery):
+    await callback.answer()
+    if callback.message:
+        await callback.message.answer(
+            "<b>Upgrade Team Challenge Rules</b>\n\n"
+            "Read the scenario, choose one answer, and learn from the explanation after submission. "
+            "Correct answers earn 10 points. Inviting a real participant who confirms registration earns "
+            f"{settings.CHALLENGE_REFERRAL_POINTS} referral points. One Telegram identity can answer each "
+            "challenge once.",
+            parse_mode=ParseMode.HTML,
+        )
+
+
+@router.callback_query(F.data == "active_challenge")
+async def active_challenge_callback(callback: CallbackQuery):
+    await callback.answer()
+    if callback.message:
+        async with AsyncSessionLocal() as session:
+            public_user = await session.scalar(
+                select(PublicUser).where(PublicUser.telegram_id == callback.from_user.id)
+            )
+            challenge = await get_active_challenge(session)
+        if public_user is None or public_user.terms_accepted_at is None:
+            await _send_registration(callback.message, challenge, public_user)
+        elif challenge is None:
+            await callback.message.answer(
+                "There is no active challenge right now. Please check back soon.",
+                reply_markup=_profile_keyboard(),
+            )
+        else:
+            await _send_challenge(callback.message, challenge, public_user)
+
+
+@router.callback_query(F.data == "my_referral")
+async def referral_callback(callback: CallbackQuery):
+    user = callback.from_user
+    async with AsyncSessionLocal() as session:
+        public_user, _ = await get_or_create_public_user(session, user.id, user.username, user.full_name)
+        await session.commit()
+    link = public_referral_link(public_user.referral_code, get_public_bot_username())
+    await callback.answer()
+    if callback.message:
+        await callback.message.answer(
+            "<b>Your invitation link</b>\n\n"
+            f"<code>{escape(link)}</code>\n\n"
+            "Share it with people who genuinely want to learn about RDP and VPS security. "
+            "Your stats update after a new participant confirms registration.\n\n"
+            f"Invited participants: <b>{public_user.referral_count}</b>\n"
+            f"Referral points: <b>{public_user.referral_points}</b>",
+            parse_mode=ParseMode.HTML,
         )
 
 
@@ -116,12 +272,22 @@ async def answer(callback: CallbackQuery):
         if challenge.language != "en":
             await callback.answer("This challenge is no longer available.", show_alert=True)
             return
+        public_user, _ = await get_or_create_public_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.full_name,
+        )
+        if public_user.terms_accepted_at is None:
+            await callback.answer("Please confirm registration with /start first.", show_alert=True)
+            return
         participant = await register_participant(
             session,
             challenge,
             callback.from_user.id,
             callback.from_user.username,
             callback.from_user.full_name,
+            public_user=public_user,
         )
         if participant.answer_submitted:
             await callback.answer("You have already answered this challenge.", show_alert=True)
@@ -133,7 +299,11 @@ async def answer(callback: CallbackQuery):
         )
         await callback.message.edit_reply_markup(reply_markup=None)
         await callback.message.answer(
-            "✅ <b>Answer recorded.</b> View the current leaderboard with /leaderboard."
+            (
+                "✅ <b>Answer recorded.</b>\n\n"
+                f"<b>Why:</b> {escape(challenge.learning_note or 'Review the correct option and apply the principle to your own environment.')}\n\n"
+                "View the current leaderboard with /leaderboard."
+            )
             if correct
             else "✅ <b>Answer recorded.</b> Watch for the next Upgrade Team challenge.",
             parse_mode=ParseMode.HTML,
@@ -153,6 +323,43 @@ async def show_leaderboard(message: Message):
         name = row.username and f"@{row.username}" or row.display_name or "Participant"
         lines.append(f"<b>{index}.</b> {escape(name)}  ·  {row.points} points")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+@router.callback_query(F.data == "show_leaderboard")
+async def show_leaderboard_callback(callback: CallbackQuery):
+    await callback.answer()
+    if callback.message:
+        await show_leaderboard(callback.message)
+
+
+@router.message(Command("profile"))
+async def show_profile(message: Message):
+    user = await _load_user(message)
+    if user.terms_accepted_at is None:
+        await _send_registration(message, None, user)
+        return
+    await message.answer(
+        "<b>Your Challenge Profile</b>\n\n"
+        f"Name: {escape(user.display_name or 'Participant')}\n"
+        f"Total points: <b>{user.total_points}</b>\n"
+        f"Correct answers: <b>{user.correct_answers}/{user.challenge_count}</b>\n"
+        f"Invited participants: <b>{user.referral_count}</b>\n"
+        f"Referral points: <b>{user.referral_points}</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_profile_keyboard(),
+    )
+
+
+@router.message(Command("referral"))
+async def show_referral(message: Message):
+    user = await _load_user(message)
+    link = public_referral_link(user.referral_code, get_public_bot_username())
+    await message.answer(
+        "<b>Invite & learn together</b>\n\n"
+        f"<code>{escape(link)}</code>\n\n"
+        f"You receive {settings.CHALLENGE_REFERRAL_POINTS} points when a new participant confirms registration.",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(Command("challenges"))

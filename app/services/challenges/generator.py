@@ -14,6 +14,7 @@ def _fallback_content(topic: str, language: str) -> dict[str, Any]:
     return {
         "title": "RDP Security Fundamentals",
         "question": "Which practice is safest for protecting an RDP server?",
+        "learning_note": "MFA plus network-level access controls reduce the chance that a stolen password becomes a full remote-session compromise.",
         "answers": [
             "Enable MFA and restrict access",
             "Post the password publicly",
@@ -39,7 +40,16 @@ def _is_english_only(value: str) -> bool:
 
 
 def _validate_content(content: dict[str, Any], topic: str, language: str) -> dict[str, Any]:
-    required = ("title", "question", "answers", "correct_answer", "reward", "hashtags", "seo_keywords")
+    required = (
+        "title",
+        "question",
+        "learning_note",
+        "answers",
+        "correct_answer",
+        "reward",
+        "hashtags",
+        "seo_keywords",
+    )
     if any(key not in content for key in required):
         raise ValueError("Grok response is missing required challenge fields")
     answers = content["answers"]
@@ -50,11 +60,18 @@ def _validate_content(content: dict[str, Any], topic: str, language: str) -> dic
         raise ValueError("correct_answer must be an answer index from 0 to 3")
     content["title"] = str(content["title"])[:500]
     content["question"] = str(content["question"])[:4000]
+    content["learning_note"] = str(content["learning_note"])[:4000]
     content["answers"] = [str(answer)[:500] for answer in answers]
     content["reward"] = str(content["reward"])[:500]
     content["hashtags"] = [str(tag)[:80] for tag in content["hashtags"][:12]]
     content["seo_keywords"] = [str(keyword)[:120] for keyword in content["seo_keywords"][:12]]
-    public_fields = [content["title"], content["question"], *content["answers"], content["reward"]]
+    public_fields = [
+        content["title"],
+        content["question"],
+        content["learning_note"],
+        *content["answers"],
+        content["reward"],
+    ]
     if not all(_is_english_only(value) for value in public_fields):
         raise ValueError("Challenge content must be English-only")
     return content
@@ -82,13 +99,15 @@ async def generate_challenge_content(topic: str, language: str = "en") -> dict[s
     )
     prompt = f"""
 Create one exciting but truthful multiple-choice challenge about RDP, VPS, remote desktop,
-server reliability, or cybersecurity.
+server reliability, or cybersecurity. Make it scenario-based and useful for an RDP operator,
+not a trivial definition. All four options should be plausible, with one clearly best answer.
 Language: English only
 Topic: {topic}
 Return exactly this JSON shape:
 {{
   "title": "short title",
   "question": "one clear question",
+  "learning_note": "a concise explanation of why the correct answer is correct and what the reader should remember",
   "answers": ["answer 1", "answer 2", "answer 3", "answer 4"],
   "correct_answer": 0,
   "reward": "a transparent non-guaranteed reward description",

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     CHALLENGE_INTERVAL_HOURS: int = 48
     CHALLENGE_DURATION_HOURS: int = 48
     CHALLENGE_DEFAULT_REWARD: str = "Upgrade Team reward for the winning participants"
+    CHALLENGE_REFERRAL_POINTS: int = 3
 
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"

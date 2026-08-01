@@ -17,6 +17,7 @@ class Challenge(Base, TimestampMixin):
     topic: Mapped[str] = mapped_column(String(500), nullable=False)
     announcement: Mapped[str] = mapped_column(Text, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
+    learning_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     answers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     correct_answer: Mapped[int] = mapped_column(Integer, nullable=False)
     hashtags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
@@ -51,6 +52,9 @@ class ChallengeParticipant(Base, TimestampMixin):
     answer_submitted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     answer_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    public_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public_users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     challenge = relationship("Challenge", back_populates="participants")
