@@ -23,9 +23,15 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_IDS
         sync: false
+      - key: TELEGRAM_PUBLIC_BOT_TOKEN
+        sync: false
+      - key: PUBLIC_BOT_USERNAME
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: XAI_API_KEY
         sync: false
       # ── Crypto wallet addresses ─────────────────────────────────────────
       - key: WALLET_BTC
@@ -80,9 +86,15 @@ services:
         sync: false
       - key: ADMIN_BOT_TOKEN
         sync: false
+      - key: TELEGRAM_PUBLIC_BOT_TOKEN
+        sync: false
+      - key: PUBLIC_BOT_USERNAME
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: XAI_API_KEY
         sync: false
       - key: DATABASE_SSL
         value: "true"

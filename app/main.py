@@ -19,7 +19,17 @@ try:
     from app.db.session import init_db
     from app.cache.redis_client import get_redis, close_redis
     from app.services.userbot.manager import userbot_manager
-    from app.api.v1 import customers, conversations, leads, content, channels, accounts, knowledge, metrics
+    from app.api.v1 import (
+        customers,
+        conversations,
+        leads,
+        content,
+        channels,
+        accounts,
+        knowledge,
+        metrics,
+        challenges,
+    )
     setup_logging()
     logger = get_logger(__name__)
     _FULL_MODE = True
@@ -43,6 +53,7 @@ except Exception as _e:
 _userbot_task: asyncio.Task | None = None
 _auto_poster_task: asyncio.Task | None = None
 _rdp_pool_task: asyncio.Task | None = None
+_challenge_task: asyncio.Task | None = None
 _bg_init_task: asyncio.Task | None = None
 _keep_alive_task: asyncio.Task | None = None
 
@@ -106,7 +117,7 @@ async def _timed(coro, name: str, timeout: float) -> bool:
 
 
 async def _background_init() -> None:
-    global _userbot_task, _auto_poster_task
+    global _userbot_task, _auto_poster_task, _challenge_task
 
     await _timed(init_db(), "init_db", 15.0)
 
@@ -121,6 +132,18 @@ async def _background_init() -> None:
         _startup_errors.append(f"publisher: {e}")
 
     await _timed(_setup_admin_bot(), "admin_bot", 60.0)
+
+    try:
+        from app.services.challenges.public_bot import setup_public_bot
+        await _timed(setup_public_bot(), "public_bot", 30.0)
+    except Exception as e:
+        _startup_errors.append(f"public_bot: {e}")
+
+    try:
+        from app.services.challenges.service import run_challenge_scheduler
+        _challenge_task = asyncio.create_task(run_challenge_scheduler())
+    except Exception as e:
+        _startup_errors.append(f"challenge_scheduler: {e}")
 
     try:
         from app.services.channel.auto_poster import run_auto_poster
@@ -186,7 +209,7 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
-    for task in (_rdp_pool_task, _auto_poster_task, _userbot_task):
+    for task in (_rdp_pool_task, _auto_poster_task, _userbot_task, _challenge_task):
         if task:
             task.cancel()
             try:
@@ -201,6 +224,11 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.admin_bot.bot import shutdown_admin_bot
         await shutdown_admin_bot()
+    except Exception:
+        pass
+    try:
+        from app.services.challenges.public_bot import shutdown_public_bot
+        await shutdown_public_bot()
     except Exception:
         pass
     try:
@@ -253,6 +281,16 @@ if _FULL_MODE:
                 logger.error("webhook_processing_error", error=str(e))
             return {"ok": True}
 
+        @app.post("/tg-api/public-bot/webhook")
+        async def public_bot_webhook(request: Request):
+            try:
+                update_data = await request.json()
+                from app.services.challenges.public_bot import process_update
+                await process_update(update_data)
+            except Exception as e:
+                logger.error("public_bot_webhook_processing_error", error=str(e))
+            return {"ok": True}
+
         API_PREFIX = "/api/v1"
         app.include_router(customers.router, prefix=API_PREFIX)
         app.include_router(conversations.router, prefix=API_PREFIX)
@@ -262,6 +300,7 @@ if _FULL_MODE:
         app.include_router(accounts.router, prefix=API_PREFIX)
         app.include_router(knowledge.router, prefix=API_PREFIX)
         app.include_router(metrics.router, prefix=API_PREFIX)
+        app.include_router(challenges.router, prefix=API_PREFIX)
     except Exception as _e2:
         print(f"APP_SETUP_ERROR: {_e2}", file=sys.stderr, flush=True)
         _startup_errors.append(f"app_setup: {_e2}")
@@ -286,6 +325,8 @@ async def startup_status():
             "DATABASE_URL_set": bool(settings.DATABASE_URL),
             "GROQ_KEY_set": bool(settings.GROQ_API_KEY),
             "ADMIN_TOKEN_set": bool(settings.ADMIN_BOT_TOKEN),
+            "PUBLIC_BOT_TOKEN_set": bool(settings.public_bot_token),
+            "XAI_KEY_set": bool(settings.XAI_API_KEY),
             "REDIS_URL": settings.REDIS_URL,
             "RENDER_EXTERNAL_URL": os.environ.get("RENDER_EXTERNAL_URL", "not set"),
         },

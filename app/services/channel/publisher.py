@@ -440,13 +440,14 @@ async def publish_post(
                 caption = _build_post_text(content, channel.username, MAX_CAPTION_LENGTH)
                 file_obj = io.BytesIO(media_bytes)
                 file_obj.name = media_file_name
+                post_parse_mode = None if post.content_type == "challenge" else "md"
                 if media_is_video:
                     msg = await _send_with_flood_retry(
                         client.send_file,
                         channel.telegram_channel_id,
                         file_obj,
                         caption=caption,
-                        parse_mode="md",
+                        parse_mode=post_parse_mode,
                         supports_streaming=True,
                     )
                 else:
@@ -455,7 +456,7 @@ async def publish_post(
                         channel.telegram_channel_id,
                         file_obj,
                         caption=caption,
-                        parse_mode="md",
+                        parse_mode=post_parse_mode,
                     )
                 await _add_contact_button(channel.telegram_channel_id, msg.id)
                 results[str(channel_id)] = {
@@ -490,11 +491,12 @@ async def publish_post(
 
             if not media_sent:
                 text = _build_post_text(content, channel.username, MAX_TEXT_LENGTH)
+                post_parse_mode = None if post.content_type == "challenge" else "md"
                 msg = await _send_with_flood_retry(
                     client.send_message,
                     channel.telegram_channel_id,
                     text,
-                    parse_mode="md",
+                    parse_mode=post_parse_mode,
                 )
                 await _add_contact_button(channel.telegram_channel_id, msg.id)
                 results[str(channel_id)] = {

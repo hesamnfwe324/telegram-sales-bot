@@ -32,11 +32,22 @@ class Settings(BaseSettings):
 
     ADMIN_BOT_TOKEN: str = ""
     ADMIN_TELEGRAM_IDS: str = ""
+    TELEGRAM_PUBLIC_BOT_TOKEN: str = ""
+    PUBLIC_BOT_USERNAME: str = ""
 
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_MAX_TOKENS: int = 2048
     OPENAI_TEMPERATURE: float = 0.7
+
+    XAI_API_KEY: str = ""
+    XAI_BASE_URL: str = "https://api.x.ai/v1"
+    XAI_MODEL: str = "grok-3-mini"
+
+    CHALLENGE_AUTO_ENABLED: bool = True
+    CHALLENGE_INTERVAL_HOURS: int = 48
+    CHALLENGE_DURATION_HOURS: int = 48
+    CHALLENGE_DEFAULT_REWARD: str = "یک ماه سرویس RDP رایگان برای برندگان"
 
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
@@ -116,6 +127,10 @@ class Settings(BaseSettings):
     @property
     def content_default_languages_list(self) -> List[str]:
         return [lang.strip() for lang in self.CONTENT_DEFAULT_LANGUAGES.split(",") if lang.strip()]
+
+    @property
+    def public_bot_token(self) -> str:
+        return self.TELEGRAM_PUBLIC_BOT_TOKEN
 
     @property
     def active_wallets(self) -> dict:
