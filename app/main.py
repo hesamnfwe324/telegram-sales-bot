@@ -2,7 +2,8 @@ import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
+from fastapi.responses import JSONResponse
 
 _import_error: str = ""
 _startup_errors: list[str] = []
@@ -12,7 +13,6 @@ _FULL_MODE = False
 try:
     from fastapi import Request
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse
     from app.core.config import settings
     from app.core.logging import setup_logging, get_logger
     from app.core.exceptions import AppException
@@ -272,22 +272,48 @@ async def healthz():
     return {"status": "ok", "app": settings.APP_NAME}
 
 
+@app.get("/api/readyz")
+async def readyz(response: Response):
+    """Report whether the background services finished starting successfully."""
+    if not _FULL_MODE or _import_error:
+        response.status_code = 503
+        return {"status": "not_ready"}
+
+    if _bg_init_task is None or not _bg_init_task.done():
+        response.status_code = 503
+        return {"status": "starting"}
+
+    if _bg_init_task.cancelled():
+        response.status_code = 503
+        return {"status": "not_ready"}
+
+    try:
+        background_error = _bg_init_task.exception()
+    except asyncio.CancelledError:
+        background_error = "cancelled"
+
+    if background_error is not None or _startup_errors:
+        response.status_code = 503
+        return {"status": "not_ready"}
+
+    return {"status": "ready"}
+
+
 @app.get("/api/startup-status")
 async def startup_status():
     bg_done = _bg_init_task.done() if _bg_init_task else None
     return {
         "status": "degraded" if (_startup_errors or _import_error) else "ok",
-        "import_error": _import_error,
-        "startup_errors": _startup_errors,
         "full_mode": _FULL_MODE,
         "background_init_complete": bg_done,
+        "startup_error_count": len(_startup_errors) + (1 if _import_error else 0),
         "env": {
             "APP_ENV": settings.APP_ENV,
             "DATABASE_URL_set": bool(settings.DATABASE_URL),
             "GROQ_KEY_set": bool(settings.GROQ_API_KEY),
             "ADMIN_TOKEN_set": bool(settings.ADMIN_BOT_TOKEN),
-            "REDIS_URL": settings.REDIS_URL,
-            "RENDER_EXTERNAL_URL": os.environ.get("RENDER_EXTERNAL_URL", "not set"),
+            "REDIS_URL_set": bool(settings.REDIS_URL),
+            "RENDER_EXTERNAL_URL_set": bool(os.environ.get("RENDER_EXTERNAL_URL")),
         },
     }
 
