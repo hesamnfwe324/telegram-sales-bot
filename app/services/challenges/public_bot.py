@@ -103,6 +103,15 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
         "",
     ]
     buttons: list[list[InlineKeyboardButton]] = []
+    if settings.REQUIRED_CHANNEL_FOLDER_LINK:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="📂 Open official channel list",
+                    url=settings.REQUIRED_CHANNEL_FOLDER_LINK,
+                )
+            ]
+        )
     for item in statuses:
         icon = "✅" if item["status"] == "joined" else "❌"
         lines.append(f"{icon} {escape(item['name'] or 'Official channel')}")
