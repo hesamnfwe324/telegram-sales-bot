@@ -65,7 +65,9 @@ async def start(message: Message):
     slug = args[1].removeprefix("challenge_") if len(args) > 1 else ""
     async with AsyncSessionLocal() as session:
         challenge = (
-            await session.scalar(select(Challenge).where(Challenge.slug == slug))
+            await session.scalar(
+                select(Challenge).where(Challenge.slug == slug, Challenge.language == "en")
+            )
             if slug
             else await get_active_challenge(session)
         )
@@ -77,13 +79,6 @@ async def start(message: Message):
                 "━━━━━━━━━━━━━━━━━━━━\n\n"
                 "There is no active challenge right now.\n"
                 "Please check back soon.",
-                parse_mode=ParseMode.HTML,
-            )
-            return
-        if challenge.language != "en":
-            await message.answer(
-                "<b>UPGRADE TEAM</b>\n\n"
-                "This challenge has expired. Please use the latest challenge link.",
                 parse_mode=ParseMode.HTML,
             )
             return

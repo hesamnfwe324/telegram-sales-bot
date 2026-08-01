@@ -150,7 +150,12 @@ async def get_active_challenge(session: AsyncSession) -> Challenge | None:
     now = datetime.now(timezone.utc)
     result = await session.execute(
         select(Challenge)
-        .where(Challenge.status == "active", Challenge.starts_at <= now, Challenge.ends_at > now)
+        .where(
+            Challenge.status == "active",
+            Challenge.language == "en",
+            Challenge.starts_at <= now,
+            Challenge.ends_at > now,
+        )
         .order_by(desc(Challenge.created_at))
         .limit(1)
     )
