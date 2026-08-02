@@ -24,6 +24,12 @@ getChatMember notes
 - Private channels (no username, only numeric ID): bot MUST be admin of that channel.
 We always try @username first, then fall back to the numeric ID.
 Any exception is logged and treated as "unverified" (gate stays closed).
+
+FORCE_SUBSCRIPTION_ENABLED
+---------------------------
+When settings.FORCE_SUBSCRIPTION_ENABLED is False, check_membership immediately
+returns (True, []) so every handler proceeds without a gate. Set this env var to
+"false" in Render only for controlled testing; keep it "true" in production.
 """
 
 from __future__ import annotations
@@ -169,6 +175,11 @@ async def check_membership(
       allowed  - True only when every required channel returned "joined".
       statuses - list of {"name", "status", "link"} for each required channel.
     """
+    # Global kill-switch: if disabled, every user passes immediately.
+    if not settings.FORCE_SUBSCRIPTION_ENABLED:
+        logger.debug("force_sub_disabled_globally", user_id=user_id)
+        return True, []
+
     now = time.monotonic()
 
     if not force and user_id in _cache:
