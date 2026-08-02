@@ -100,7 +100,7 @@ async def _require_membership(message: Message) -> bool:
     """
     if _bot is None:
         await message.answer(
-            "⚠️ ربات در حال راه‌اندازی است. لطفاً چند ثانیه صبر کنید.",
+            "⚠️ The bot is starting up. Please wait a few seconds.",
             parse_mode=ParseMode.HTML,
         )
         return False
@@ -117,11 +117,11 @@ async def _require_membership_cb(callback: CallbackQuery) -> bool:
     (which would be the bot itself).  Sends the gate message when blocked.
     """
     if _bot is None:
-        await callback.answer("⚠️ ربات در حال راه‌اندازی است. لطفاً چند ثانیه صبر کنید.", show_alert=True)
+        await callback.answer("⚠️ The bot is starting up. Please wait a few seconds.", show_alert=True)
         return False
     allowed, statuses = await check_membership(_bot, callback.from_user.id)
     if not allowed:
-        await callback.answer("ابتدا در همه کانال‌ها عضو شوید.", show_alert=True)
+        await callback.answer("Please join all required channels first.", show_alert=True)
         if callback.message:
             await send_gate(callback.message, statuses)
     return allowed
@@ -374,7 +374,6 @@ async def accept_terms_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "challenge_help")
 async def challenge_help_callback(callback: CallbackQuery):
-    # FIX: added membership check — previously this handler had no gate at all
     if not await _require_membership_cb(callback):
         return
     await callback.answer()
@@ -500,9 +499,9 @@ async def answer(callback: CallbackQuery):
 
 @router.callback_query(F.data == "fsub_verify")
 async def fsub_verify_callback(callback: CallbackQuery):
-    """User tapped '✅ بررسی عضویت' — invalidate cache and re-check."""
+    """User tapped '✅ Verify Membership' — invalidate cache and re-check."""
     if _bot is None:
-        await callback.answer("ربات هنوز آماده نشده، کمی صبر کنید.", show_alert=True)
+        await callback.answer("The bot is not ready yet. Please wait a moment.", show_alert=True)
         return
 
     # Force a fresh Telegram API call by clearing the cache first
@@ -510,7 +509,7 @@ async def fsub_verify_callback(callback: CallbackQuery):
     allowed, statuses = await check_membership(_bot, callback.from_user.id)
 
     if not allowed:
-        await callback.answer("هنوز در همه کانال‌ها عضو نشدید. ❌", show_alert=True)
+        await callback.answer("You have not joined all required channels yet. ❌", show_alert=True)
         if callback.message:
             try:
                 text, kb = build_gate_message(statuses)
@@ -522,15 +521,15 @@ async def fsub_verify_callback(callback: CallbackQuery):
         return
 
     # All channels joined ✅
-    await callback.answer("✅ عضویت تأیید شد!", show_alert=False)
+    await callback.answer("✅ Membership verified!", show_alert=False)
     if callback.message:
         try:
             await callback.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
         await callback.message.answer(
-            "<b>عضویت تأیید شد ✅</b>\n\n"
-            "حالا می‌توانید از ربات استفاده کنید. برای شروع /start را بزنید.",
+            "<b>Membership verified ✅</b>\n\n"
+            "You can now use the bot. Type /start to begin.",
             parse_mode=ParseMode.HTML,
         )
 
@@ -617,9 +616,9 @@ async def on_chat_member_updated(event: ChatMemberUpdated) -> None:
             _, statuses = await check_membership(_bot, user.id)
             text, kb = build_gate_message(statuses)
             lock_notice = (
-                "⛔ <b>دسترسی به ربات قطع شد</b>\n\n"
-                "شما از یکی از کانال‌های اجباری خارج شدید.\n"
-                "برای استفاده مجدد از ربات، دوباره عضو شوید و سپس /start را بزنید.\n\n"
+                "⛔ <b>Bot access revoked</b>\n\n"
+                "You have left one of the required channels.\n"
+                "To use the bot again, please rejoin and then type /start.\n\n"
             )
             await _bot.send_message(
                 user.id,
@@ -677,7 +676,6 @@ async def setup_public_bot() -> None:
             await _bot.set_webhook(
                 url=url,
                 drop_pending_updates=False,
-                # FIX: added "chat_member" so Telegram pushes leave events to webhook
                 allowed_updates=["message", "callback_query", "chat_member"],
             )
             logger.info("public_bot_webhook_set", url=url)
