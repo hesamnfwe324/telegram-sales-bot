@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     CHALLENGE_DURATION_HOURS: int = 4
     CHALLENGE_DEFAULT_REWARD: str = "Upgrade Team reward for the winning participants"
     CHALLENGE_REFERRAL_POINTS: int = 3
-    REQUIRED_CHANNEL_FOLDER_LINK: str = "https://t.me/addlist/4xJXMUc98LZhNGM8"
+    REQUIRED_CHANNEL_FOLDER_LINK: str = "https://t.me/addlist/wouQ50YXz_wwZGE0"
 
     GROQ_API_KEY: str = ""
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
