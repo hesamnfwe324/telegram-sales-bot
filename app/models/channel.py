@@ -9,7 +9,13 @@ class TelegramChannel(Base, TimestampMixin):
     __tablename__ = "channels"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("telegram_accounts.id"), nullable=False)
+
+    # nullable=True — channels added manually for force-subscription do not need
+    # a userbot account.  The posting pipeline skips channels where account is None.
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("telegram_accounts.id"), nullable=True
+    )
+
     telegram_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -24,5 +30,10 @@ class TelegramChannel(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("proxies.id", ondelete="SET NULL"), nullable=True
     )
 
-    account = relationship("TelegramAccount", back_populates="channels")
+    # account is None for manually-added force-sub channels
+    account = relationship(
+        "TelegramAccount",
+        back_populates="channels",
+        foreign_keys=[account_id],
+    )
     proxy = relationship("Proxy", back_populates="channels", lazy="select")
