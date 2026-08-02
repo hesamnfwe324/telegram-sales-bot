@@ -90,33 +90,7 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
             return {"name": name, "status": "unverified", "link": link}
 
     statuses = await asyncio.gather(*(check(channel) for channel in channels))
-    logger.info(
-        "required_channel_membership_checked",
-        telegram_id=telegram_id,
-        total=len(statuses),
-        joined=sum(item["status"] == "joined" for item in statuses),
-        not_joined=sum(item["status"] == "not_joined" for item in statuses),
-        unverified=sum(item["status"] == "unverified" for item in statuses),
-    )
     return all(item["status"] == "joined" for item in statuses), list(statuses)
-
-
-def _membership_details(statuses: list[dict[str, str | None]]) -> str:
-    total = len(statuses)
-    joined = sum(item["status"] == "joined" for item in statuses)
-    lines = [f"<b>Membership status: {joined}/{total} channels verified</b>"]
-    not_joined = [item["name"] or "Unnamed channel" for item in statuses if item["status"] == "not_joined"]
-    unverified = [item["name"] or "Unnamed channel" for item in statuses if item["status"] == "unverified"]
-    if not_joined:
-        lines.append("\n❌ <b>Not joined:</b>\n" + "\n".join(f"• {escape(name)}" for name in not_joined[:10]))
-    if unverified:
-        lines.append(
-            "\n⚠️ <b>Could not be verified:</b>\n"
-            + "\n".join(f"• {escape(name)} — the bot needs admin access" for name in unverified[:10])
-        )
-    if len(not_joined) + len(unverified) > 10:
-        lines.append("• More channels are pending verification.")
-    return "\n".join(lines)
 
 
 async def _send_membership_gate(message: Message, statuses: list[dict[str, str | None]] | None = None) -> None:
@@ -126,10 +100,8 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
         "<b>Join the official channels first</b>\n",
         "To unlock the bot, you must join every official Upgrade Team channel below. "
         "After joining, press <b>Check my membership</b>.",
-        "\n<i>Your membership will be checked across all official channels automatically.</i>",
+        "",
     ]
-    if statuses:
-        lines.extend(["", _membership_details(statuses)])
     buttons: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
@@ -331,8 +303,7 @@ async def accept_terms_callback(callback: CallbackQuery):
 async def check_membership_callback(callback: CallbackQuery):
     allowed, statuses = await _check_membership(callback.from_user.id)
     if not allowed:
-        joined = sum(item["status"] == "joined" for item in statuses)
-        await callback.answer(f"Verified {joined}/{len(statuses)} channels. See the details below.", show_alert=True)
+        await callback.answer("Some channels are still missing.", show_alert=True)
         if callback.message:
             await _send_membership_gate(callback.message, statuses)
         return
