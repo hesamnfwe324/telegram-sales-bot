@@ -21,9 +21,13 @@
 
   mkdir -p sessions data/training logs
 
-  echo "[start] Running DB migrations (timeout 20s)..."
-  # Short timeout: if DB isn't ready, uvicorn background-init will retry gracefully
-  timeout 20 env -u PYTHONPATH alembic upgrade head 2>&1 || echo "[warn] Migration skipped or timed out — app will retry on next deploy"
+  echo "[start] Running DB migrations (timeout 120s)..."
+  # Do not start a partially migrated application. The membership gate depends
+  # on the current schema, so a skipped migration can silently bypass it.
+  if ! timeout 120 env -u PYTHONPATH alembic upgrade head; then
+    echo "[fatal] Database migration failed or timed out; refusing to start."
+    exit 1
+  fi
 
   echo "[start] Starting server on port ${PORT:-10000}..."
   exec python3 -m uvicorn app.main:app \

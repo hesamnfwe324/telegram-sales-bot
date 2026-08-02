@@ -60,29 +60,42 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
     """
     try:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(
+            query = (
                 select(TelegramChannel)
                 .where(TelegramChannel.is_active.is_(True))
-                .where(TelegramChannel.require_join.is_(True))
                 .order_by(TelegramChannel.created_at)
             )
-            required_channels = list(result.scalars().all())
+            result = await session.execute(query)
+            active_channels = list(result.scalars().all())
+            required_channels = (
+                active_channels
+                if settings.FORCE_SUBSCRIPTION_ENABLED
+                else [channel for channel in active_channels if channel.require_join]
+            )
     except Exception as exc:
         logger.error("membership_check_db_error", error=str(exc))
         return False, [
             {"name": "Official channels", "status": "unverified", "link": None}
         ]
 
-    # No mandatory channels means the administrator has intentionally disabled
-    # the gate. Do not lock every user out behind a fake "Official channels"
-    # row, and do not call Telegram unnecessarily.
+    # Production is configured as a mandatory-subscription bot. An empty
+    # channel query is not proof that the user is allowed through: it usually
+    # means discovery/migration has not populated the database yet. Fail
+    # closed and show the gate instead of exposing registration and menus.
     if not required_channels:
         logger.warning(
-            "membership_check_no_required_channels",
+            "membership_check_no_active_channels",
             telegram_id=telegram_id,
-            note="No active channels are marked require_join; membership gate is disabled.",
+            force_subscription=settings.FORCE_SUBSCRIPTION_ENABLED,
+            note="No active channels are configured; membership gate remains closed.",
         )
-        return True, []
+        return False, [
+            {
+                "name": "Official channels",
+                "status": "unverified",
+                "link": settings.REQUIRED_CHANNEL_FOLDER_LINK or None,
+            }
+        ]
 
     if _bot is None:
         logger.error(
@@ -164,7 +177,10 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
     # produce an individual t.me link. Keep the folder link as a second,
     # reliable way into the required channels in that case.
     folder_link = settings.REQUIRED_CHANNEL_FOLDER_LINK
-    if folder_link and not any(s.get("link") for s in statuses):
+    if folder_link and (
+        not any(s.get("link") for s in statuses)
+        or any(s.get("status") == "unverified" and not s.get("link") for s in statuses)
+    ):
         buttons.append(
             [InlineKeyboardButton(text="📂 مشاهده همه کانال‌ها", url=folder_link)]
         )

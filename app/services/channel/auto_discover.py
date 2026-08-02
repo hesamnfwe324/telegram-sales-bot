@@ -105,6 +105,7 @@ async def discover_and_register_channels(userbot_manager, account_id: str) -> di
                   display_name=ch["title"],
                   language="en",
                   is_active=True,
+                  require_join=True,
                   metadata_={
                       "join_link": (
                           f"https://t.me/{ch['username'].lstrip('@')}"
