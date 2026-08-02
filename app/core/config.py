@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     TELEGRAM_PUBLIC_BOT_TOKEN: str = ""
     PUBLIC_BOT_USERNAME: str = ""
 
+    # ── Force-subscription gate ─────────────────────────────────────────────
+    # Set in Render → Environment → Secret Files / Env Vars
+    #
+    # FORCE_SUBSCRIPTION_ENABLED — master switch; set "false" for testing
+    # REQUIRED_CHANNELS          — comma-separated @usernames or numeric IDs
+    #   Examples:
+    #     @MyChannel
+    #     @Channel1,@Channel2,@Channel3
+    #     -1001234567890,-1009876543210
+    FORCE_SUBSCRIPTION_ENABLED: bool = True
+    REQUIRED_CHANNELS: str = ""  # e.g. "@UpgradeTeamChannel,@AnotherChannel"
+
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_MAX_TOKENS: int = 2048
