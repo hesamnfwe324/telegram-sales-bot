@@ -131,6 +131,15 @@ async def _background_init() -> None:
     except Exception as e:
         _startup_errors.append(f"publisher: {e}")
 
+    try:
+        # Start the scheduler before optional bot/webhook setup. A Telegram
+        # webhook or bot identity lookup must not prevent timed challenges
+        # from being evaluated.
+        from app.services.challenges.service import run_challenge_scheduler
+        _challenge_task = asyncio.create_task(run_challenge_scheduler())
+    except Exception as e:
+        _startup_errors.append(f"challenge_scheduler: {e}")
+
     await _timed(_setup_admin_bot(), "admin_bot", 60.0)
 
     try:
@@ -138,12 +147,6 @@ async def _background_init() -> None:
         await _timed(setup_public_bot(), "public_bot", 30.0)
     except Exception as e:
         _startup_errors.append(f"public_bot: {e}")
-
-    try:
-        from app.services.challenges.service import run_challenge_scheduler
-        _challenge_task = asyncio.create_task(run_challenge_scheduler())
-    except Exception as e:
-        _startup_errors.append(f"challenge_scheduler: {e}")
 
     try:
         from app.services.channel.auto_poster import run_auto_poster

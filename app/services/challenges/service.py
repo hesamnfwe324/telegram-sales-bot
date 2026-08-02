@@ -131,12 +131,22 @@ async def create_challenge(
     language: str = "en",
     public_bot_username: str | None = None,
 ) -> Challenge:
+    # Force-subscription channels can be added manually without a userbot
+    # account. They are valid membership-gate targets, but cannot receive
+    # channel posts. Only include channels backed by an active publishing
+    # account in an automatic challenge.
     channel_result = await session.execute(
-        select(TelegramChannel).where(TelegramChannel.is_active.is_(True)).order_by(TelegramChannel.created_at)
+        select(TelegramChannel)
+        .join(TelegramAccount, TelegramAccount.id == TelegramChannel.account_id)
+        .where(
+            TelegramChannel.is_active.is_(True),
+            TelegramAccount.is_active.is_(True),
+        )
+        .order_by(TelegramChannel.created_at)
     )
     channels = list(channel_result.scalars().all())
     if not channels:
-        raise RuntimeError("No active Telegram channels are available for a challenge")
+        raise RuntimeError("No active publishable Telegram channels are available for a challenge")
 
     account_result = await session.execute(
         select(TelegramAccount).where(
@@ -335,6 +345,13 @@ async def run_challenge_scheduler() -> None:
     from app.db.session import AsyncSessionLocal
     from app.services.challenges.public_bot import get_public_bot_username
 
+    logger.info(
+        "challenge_scheduler_started",
+        interval_hours=settings.CHALLENGE_INTERVAL_HOURS,
+        duration_hours=settings.CHALLENGE_DURATION_HOURS,
+        enabled=settings.CHALLENGE_AUTO_ENABLED,
+    )
+
     while True:
         try:
             if settings.CHALLENGE_AUTO_ENABLED:
@@ -360,6 +377,13 @@ async def run_challenge_scheduler() -> None:
                                 public_bot_username=get_public_bot_username(),
                             )
                             logger.info("automatic_challenge_created", challenge_id=str(challenge.id))
+                        else:
+                            logger.info(
+                                "automatic_challenge_not_due",
+                                latest_challenge_id=str(latest.id) if latest else None,
+                            )
+                    else:
+                        logger.info("automatic_challenge_active", challenge_id=str(active.id))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
