@@ -15,12 +15,6 @@ from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.challenge import Challenge, ChallengeParticipant
 from app.models.public_user import PublicUser
-from app.services.challenges.force_sub import (
-    build_gate_message,
-    check_membership,
-    invalidate_cache,
-    send_gate,
-)
 from app.services.challenges.service import (
     accept_terms,
     challenge_summary,
@@ -87,26 +81,6 @@ def _profile_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-# ── membership gate helpers ────────────────────────────────────────────────
-
-async def _require_membership(message: Message) -> bool:
-    """Return True if the user passes the membership gate.
-
-    When False the gate message has already been sent to the user.
-    This is always the FIRST check inside every protected handler.
-    """
-    if _bot is None:
-        await message.answer(
-            "⚠️ ربات در حال راه‌اندازی است. لطفاً چند ثانیه صبر کنید.",
-            parse_mode=ParseMode.HTML,
-        )
-        return False
-    allowed, statuses = await check_membership(_bot, message.from_user.id)
-    if not allowed:
-        await send_gate(message, statuses)
-    return allowed
-
-
 # ── content helpers ────────────────────────────────────────────────────────
 
 def _challenge_text(challenge: Challenge) -> str:
@@ -155,12 +129,6 @@ async def _send_registration(message: Message, challenge: Challenge | None, user
 
 async def _send_challenge(message: Message, challenge: Challenge, public_user) -> bool:
     """Send the challenge question. Re-checks membership as final guard."""
-    if _bot is None:
-        return False
-    allowed, statuses = await check_membership(_bot, message.from_user.id)
-    if not allowed:
-        await send_gate(message, statuses)
-        return False
     async with AsyncSessionLocal() as session:
         current_user = await session.scalar(
             select(PublicUser).where(PublicUser.telegram_id == message.from_user.id)
@@ -190,11 +158,7 @@ async def _send_challenge(message: Message, challenge: Challenge, public_user) -
 
 @router.message(CommandStart())
 async def start(message: Message):
-    # STEP 1: membership gate — always the very first action
-    if not await _require_membership(message):
-        return
-
-    # STEP 2: parse deep-link payload
+    # STEP 1: parse deep-link payload
     args = (message.text or "").split(maxsplit=1)
     payload = args[1].strip() if len(args) > 1 else ""
     referral_code = payload.removeprefix("ref_") if payload.startswith("ref_") else None
@@ -253,8 +217,6 @@ async def start(message: Message):
 
 @router.message(Command("leaderboard"))
 async def show_leaderboard(message: Message):
-    if not await _require_membership(message):
-        return
     async with AsyncSessionLocal() as session:
         challenge = await get_active_challenge(session)
         if not challenge:
@@ -270,8 +232,6 @@ async def show_leaderboard(message: Message):
 
 @router.message(Command("profile"))
 async def show_profile(message: Message):
-    if not await _require_membership(message):
-        return
     user = await _load_user(message)
     if user.terms_accepted_at is None:
         await _send_registration(message, None, user)
@@ -290,8 +250,6 @@ async def show_profile(message: Message):
 
 @router.message(Command("referral"))
 async def show_referral(message: Message):
-    if not await _require_membership(message):
-        return
     user = await _load_user(message)
     link = public_referral_link(user.referral_code, get_public_bot_username())
     await message.answer(
@@ -305,8 +263,6 @@ async def show_referral(message: Message):
 
 @router.message(Command("challenges"))
 async def challenge_help(message: Message):
-    if not await _require_membership(message):
-        return
     await message.answer(
         "<b>UPGRADE TEAM CHALLENGES</b>\n\n"
         "Open the latest challenge link from our channel and select one answer.\n"
@@ -318,53 +274,8 @@ async def challenge_help(message: Message):
 
 # ── callback handlers ──────────────────────────────────────────────────────
 
-@router.callback_query(F.data == "fsub_verify")
-async def fsub_verify_callback(callback: CallbackQuery):
-    """User clicked the '✅ بررسی عضویت' button — force a fresh check."""
-    if _bot is None:
-        await callback.answer("ربات هنوز آماده نشده. کمی صبر کنید.", show_alert=True)
-        return
-
-    # Invalidate cache so we always contact Telegram fresh on this action
-    invalidate_cache(callback.from_user.id)
-    allowed, statuses = await check_membership(_bot, callback.from_user.id, force=True)
-
-    if not allowed:
-        await callback.answer("هنوز در همه کانال‌ها عضو نشدید.", show_alert=True)
-        if callback.message:
-            try:
-                text, kb = build_gate_message(statuses)
-                await callback.message.edit_text(
-                    text, parse_mode=ParseMode.HTML, reply_markup=kb
-                )
-            except Exception:
-                await send_gate(callback.message, statuses)
-        return
-
-    await callback.answer("✅ عضویت تأیید شد!", show_alert=False)
-    if callback.message:
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        await callback.message.answer(
-            "<b>عضویت تأیید شد ✅</b>\n\n"
-            "حالا می‌توانید از ربات استفاده کنید. برای شروع /start را بزنید.",
-            parse_mode=ParseMode.HTML,
-        )
-
-
 @router.callback_query(F.data.startswith("terms_accept"))
 async def accept_terms_callback(callback: CallbackQuery):
-    if _bot is None:
-        await callback.answer("Membership verification unavailable. Try again.", show_alert=True)
-        return
-    allowed, statuses = await check_membership(_bot, callback.from_user.id)
-    if not allowed:
-        await callback.answer("Join every official channel first.", show_alert=True)
-        if callback.message:
-            await send_gate(callback.message, statuses)
-        return
     parts = (callback.data or "").split(":", 1)
     slug = parts[1] if len(parts) == 2 and parts[1] else ""
     user = callback.from_user
@@ -418,10 +329,6 @@ async def active_challenge_callback(callback: CallbackQuery):
     await callback.answer()
     if not callback.message:
         return
-    allowed, statuses = await check_membership(_bot, callback.from_user.id)
-    if not allowed:
-        await send_gate(callback.message, statuses)
-        return
     async with AsyncSessionLocal() as session:
         public_user = await session.scalar(
             select(PublicUser).where(PublicUser.telegram_id == callback.from_user.id)
@@ -442,12 +349,6 @@ async def active_challenge_callback(callback: CallbackQuery):
 async def referral_callback(callback: CallbackQuery):
     if _bot is None:
         await callback.answer("ربات در حال راه‌اندازی است.", show_alert=True)
-        return
-    allowed, statuses = await check_membership(_bot, callback.from_user.id)
-    if not allowed:
-        await callback.answer("Join every official channel first.", show_alert=True)
-        if callback.message:
-            await send_gate(callback.message, statuses)
         return
     user = callback.from_user
     async with AsyncSessionLocal() as session:
@@ -479,10 +380,6 @@ async def answer(callback: CallbackQuery):
         answer_index = int(raw_index)
     except (AttributeError, ValueError):
         await callback.answer("Invalid answer. Please try again.", show_alert=True)
-        return
-    allowed, _ = await check_membership(_bot, callback.from_user.id)
-    if not allowed:
-        await callback.answer("Your channel membership must be verified first.", show_alert=True)
         return
     async with AsyncSessionLocal() as session:
         challenge = await session.scalar(select(Challenge).where(Challenge.slug == slug))

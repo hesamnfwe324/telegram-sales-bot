@@ -16,7 +16,6 @@ class ChannelIn(BaseModel):
     username: Optional[str] = None
     display_name: Optional[str] = None
     language: str = "en"
-    require_join: bool = True
 
 
 class ChannelOut(BaseModel):
@@ -27,7 +26,6 @@ class ChannelOut(BaseModel):
     display_name: Optional[str]
     language: str
     is_active: bool
-    require_join: bool
     post_count: int
     model_config = {"from_attributes": True}
 

@@ -21,7 +21,6 @@ from app.services.admin_bot.handlers import (
     challenges,
 )
 from app.services.admin_bot.handlers import proxy as proxy_handler
-from app.services.admin_bot.handlers import force_subscription as force_subscription_handler
 
 logger = get_logger(__name__)
 
@@ -77,7 +76,6 @@ def get_dispatcher() -> Dispatcher:
         _dp.include_router(scanner.router)
         _dp.include_router(proxy_handler.router)
         _dp.include_router(challenges.router)
-        _dp.include_router(force_subscription_handler.router)
 
     return _dp
 
