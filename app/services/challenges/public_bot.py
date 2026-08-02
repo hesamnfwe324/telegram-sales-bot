@@ -50,19 +50,17 @@ def _channel_link(channel: TelegramChannel) -> str | None:
 
 
 async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str | None]]]:
-    """Check every channel selected as mandatory by the administrator.
+    """Check membership in every active channel registered by the administrator.
 
-    If the required-channel set cannot be loaded, the check fails closed.
-    Once at least one channel is selected, every channel must be verified before
-    the user can continue. Telegram API failures remain unverified so a
-    misconfigured channel can never accidentally bypass the gate.
+    The active channel records and their numeric Telegram IDs are the source of
+    truth. Telegram API failures remain unverified so a misconfigured channel
+    can never accidentally bypass the gate.
     """
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(TelegramChannel)
                 .where(TelegramChannel.is_active.is_(True))
-                .where(TelegramChannel.require_join.is_(True))
                 .order_by(TelegramChannel.created_at)
             )
             channels = list(result.scalars().all())
@@ -74,9 +72,9 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
 
     if not channels:
         logger.warning(
-            "membership_check_no_required_channels",
+            "membership_check_no_active_channels",
             telegram_id=telegram_id,
-            note="No mandatory channels are configured; refusing access until admin config is verified.",
+            note="No active channels are registered; refusing access until admin config is verified.",
         )
         return False, [
             {"name": "Official channels", "status": "unverified", "link": None}
@@ -153,13 +151,6 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
             buttons.append([InlineKeyboardButton(text=label, url=link)])
         else:
             lines.append(f"{icon} {name}")
-
-    # Fallback folder link when no per-channel links are available
-    folder_link = settings.REQUIRED_CHANNEL_FOLDER_LINK
-    if folder_link and not any(s.get("link") for s in statuses):
-        buttons.append([
-            InlineKeyboardButton(text="📂 مشاهده همه کانال‌ها", url=folder_link)
-        ])
 
     lines.append("")
     lines.append("پس از عضویت در همه کانال‌ها، دکمه <b>✅ بررسی عضویت</b> را بزنید.")
