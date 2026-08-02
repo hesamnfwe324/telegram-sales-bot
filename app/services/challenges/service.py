@@ -145,58 +145,169 @@ async def create_challenge(
         .order_by(TelegramChannel.created_at)
     )
     channels = list(channel_result.scalars().all())
-    if not channels:
-        raise RuntimeError("No active publishable Telegram channels are available for a challenge")
 
-    account_result = await session.execute(
-        select(TelegramAccount).where(
-            TelegramAccount.id == channels[0].account_id,
-            TelegramAccount.is_active.is_(True),
-        )
-    )
-    account = account_result.scalar_one_or_none()
-    if not account:
-        raise RuntimeError("No active Telegram account owns the configured channels")
+    # ── Bot-API fallback ────────────────────────────────────────────────────
+    # When no userbot account/channel is set up, publish via Bot API directly
+    # to every channel listed in REQUIRED_CHANNELS (the bot must be an admin
+    # of those channels with "Post Messages" permission).
+    use_bot_api = False
+    bot_api_channels: list[str] = []
+    if not channels:
+        raw = (settings.REQUIRED_CHANNELS or "").strip()
+        bot_api_channels = [c.strip() for c in raw.split(",") if c.strip()]
+        if not bot_api_channels:
+            raise RuntimeError(
+                "No active publishable Telegram channels are available for a challenge. "
+                "Add a channel via the admin bot OR make the public bot an admin of a channel "
+                "and list it in REQUIRED_CHANNELS."
+            )
+        use_bot_api = True
+        logger.info("challenge_using_bot_api_fallback", channels=bot_api_channels)
 
     content = await generate_challenge_content(topic, "en")
     now = datetime.now(timezone.utc)
     ends_at = now + timedelta(hours=settings.CHALLENGE_DURATION_HOURS)
     slug = _slugify(topic)
-    challenge = Challenge(
-        slug=slug,
-        title=content["title"],
-        topic=topic,
-        announcement="",
-        question=content["question"],
-        learning_note=content.get("learning_note"),
-        answers=content["answers"],
-        correct_answer=content["correct_answer"],
-        hashtags=content["hashtags"],
-        seo_keywords=content["seo_keywords"],
-        reward=content["reward"],
-        channel_ids=[str(channel.id) for channel in channels],
-        language="en",
-        status="active",
-        starts_at=now,
-        ends_at=ends_at,
-        winner_count=3,
-        metadata_={"account_id": str(account.id), "generated_by": "xai"},
-    )
+
+    if use_bot_api:
+        challenge = Challenge(
+            slug=slug,
+            title=content["title"],
+            topic=topic,
+            announcement="",
+            question=content["question"],
+            learning_note=content.get("learning_note"),
+            answers=content["answers"],
+            correct_answer=content["correct_answer"],
+            hashtags=content["hashtags"],
+            seo_keywords=content["seo_keywords"],
+            reward=content["reward"],
+            channel_ids=bot_api_channels,
+            language="en",
+            status="active",
+            starts_at=now,
+            ends_at=ends_at,
+            winner_count=3,
+            metadata_={
+                "account_id": "bot_api",
+                "generated_by": "xai",
+                "bot_api_channels": bot_api_channels,
+            },
+        )
+    else:
+        account_result = await session.execute(
+            select(TelegramAccount).where(
+                TelegramAccount.id == channels[0].account_id,
+                TelegramAccount.is_active.is_(True),
+            )
+        )
+        account = account_result.scalar_one_or_none()
+        if not account:
+            raise RuntimeError("No active Telegram account owns the configured channels")
+
+        challenge = Challenge(
+            slug=slug,
+            title=content["title"],
+            topic=topic,
+            announcement="",
+            question=content["question"],
+            learning_note=content.get("learning_note"),
+            answers=content["answers"],
+            correct_answer=content["correct_answer"],
+            hashtags=content["hashtags"],
+            seo_keywords=content["seo_keywords"],
+            reward=content["reward"],
+            channel_ids=[str(channel.id) for channel in channels],
+            language="en",
+            status="active",
+            starts_at=now,
+            ends_at=ends_at,
+            winner_count=3,
+            metadata_={"account_id": str(account.id), "generated_by": "xai"},
+        )
+
     challenge.announcement = build_announcement(content, slug, public_bot_username, ends_at)
     session.add(challenge)
     await session.flush()
     return challenge
 
 
-async def publish_challenge(session: AsyncSession, challenge: Challenge) -> dict:
-    from app.services.channel.publisher import publish_post
+async def _publish_via_bot_api(session: AsyncSession, challenge: Challenge) -> dict:
+    """Publish a challenge announcement directly via Bot API (no userbot needed).
 
+    The bot (public bot token, or admin bot as fallback) must be an admin of
+    each target channel with the 'Post Messages' permission.
+    """
+    import httpx
+
+    bot_api_channels: list[str] = (challenge.metadata_ or {}).get(
+        "bot_api_channels", challenge.channel_ids or []
+    )
+    token = settings.TELEGRAM_PUBLIC_BOT_TOKEN or settings.ADMIN_BOT_TOKEN
+    if not token:
+        raise RuntimeError("No Bot API token available for challenge publishing")
+
+    results: dict[str, Any] = {}
+    published = 0
+
+    async with httpx.AsyncClient(timeout=30) as http:
+        for channel_id in bot_api_channels:
+            try:
+                resp = await http.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={
+                        "chat_id": channel_id,
+                        "text": challenge.announcement,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": True,
+                    },
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    results[channel_id] = {
+                        "status": "published",
+                        "message_id": data["result"]["message_id"],
+                    }
+                    published += 1
+                    logger.info("bot_api_challenge_sent", channel=channel_id)
+                else:
+                    err = data.get("description", "unknown error")
+                    results[channel_id] = {"status": "failed", "error": err}
+                    logger.warning("bot_api_publish_failed", channel=channel_id, error=err)
+            except Exception as exc:
+                results[channel_id] = {"status": "error", "error": str(exc)}
+                logger.error("bot_api_publish_error", channel=channel_id, error=str(exc))
+
+    challenge.published_at = datetime.now(timezone.utc)
+    challenge.metadata_ = {
+        **(challenge.metadata_ or {}),
+        "published_channels": published,
+    }
+    if published == 0:
+        challenge.status = "publish_failed"
+    await session.commit()
+    logger.info(
+        "challenge_published_via_bot_api",
+        challenge_id=str(challenge.id),
+        published_channels=published,
+    )
+    return results
+
+
+async def publish_challenge(session: AsyncSession, challenge: Challenge) -> dict:
     channel_ids = challenge.channel_ids or []
     if not channel_ids:
         raise RuntimeError("Challenge has no target channels")
     account_id = (challenge.metadata_ or {}).get("account_id")
     if not account_id:
         raise RuntimeError("Challenge has no publishing account")
+
+    # ── Bot-API path (no userbot) ───────────────────────────────────────────
+    if account_id == "bot_api":
+        return await _publish_via_bot_api(session, challenge)
+
+    # ── Userbot path ────────────────────────────────────────────────────────
+    from app.services.channel.publisher import publish_post
 
     post = Post(
         account_id=uuid.UUID(account_id),
