@@ -580,7 +580,7 @@ async def setup_public_bot() -> None:
         try:
             await _bot.set_webhook(
                 url=url,
-                drop_pending_updates=True,
+                drop_pending_updates=False,
                 allowed_updates=["message", "callback_query"],
             )
             logger.info("public_bot_webhook_set", url=url)
