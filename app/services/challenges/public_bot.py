@@ -55,6 +55,7 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
         result = await session.execute(
             select(TelegramChannel)
             .where(TelegramChannel.is_active.is_(True))
+            .where(TelegramChannel.require_join.is_(True))
             .order_by(TelegramChannel.created_at)
         )
         channels = list(result.scalars().all())

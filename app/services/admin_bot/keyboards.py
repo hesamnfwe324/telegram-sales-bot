@@ -1,3 +1,4 @@
+from typing import List
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -14,7 +15,26 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     builder.button(text="🔔 Alerts", callback_data="alerts_menu")
     builder.button(text="🔍 IP Scanner", callback_data="scanner")
     builder.button(text="🌐 Proxies", callback_data="proxy_menu")
+    builder.button(text="🔐 عضویت اجباری", callback_data="fsub_menu")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def force_sub_menu_kb(channels: list) -> InlineKeyboardMarkup:
+    """Keyboard for the force-subscription management screen.
+
+    Each channel gets its own toggle button showing its current state.
+    A Back button returns to the main menu.
+    """
+    builder = InlineKeyboardBuilder()
+    for ch in channels:
+        name = ch.display_name or ch.username or str(ch.telegram_channel_id)
+        icon = "✅" if ch.require_join else "❌"
+        # Truncate long names so the button stays readable
+        label = f"{icon} {name[:30]}"
+        builder.button(text=label, callback_data=f"fsub_toggle_{ch.id}")
+    builder.button(text="🔙 منوی اصلی", callback_data="main_menu")
+    builder.adjust(1)
     return builder.as_markup()
 
 
