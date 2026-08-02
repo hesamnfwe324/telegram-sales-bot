@@ -4,6 +4,8 @@ Allows the admin to toggle per-channel عضویت اجباری (require_join) on
 challenge public bot without affecting the posting pipeline.
 """
 
+import uuid
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from sqlalchemy import select
@@ -31,7 +33,9 @@ async def _build_fsub_text() -> tuple[str, list[TelegramChannel]]:
         return "⚠️ هیچ کانال فعالی در سیستم ثبت نشده است.", []
 
     lines = ["🔐 *عضویت اجباری — مدیریت کانال‌ها*\n"]
-    lines.append("کانال‌هایی که کاربر باید قبل از ورود به چالش عضو آن‌ها باشد را انتخاب کنید:\n")
+    lines.append(
+        "کانال‌هایی که کاربر باید قبل از ورود به چالش عضو آن‌ها باشد را انتخاب کنید:\n"
+    )
     for ch in channels:
         name = ch.display_name or ch.username or str(ch.telegram_channel_id)
         status = "✅ فعال" if ch.require_join else "❌ غیرفعال"
@@ -61,15 +65,22 @@ async def show_fsub_menu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("fsub_toggle_"))
 async def toggle_channel(callback: CallbackQuery) -> None:
-    channel_id_str = callback.data.removeprefix("fsub_toggle_")
+    channel_id_str = callback.data[len("fsub_toggle_"):]
+
+    # Parse UUID safely — asyncpg requires a proper uuid.UUID object, not a string
+    try:
+        channel_uuid = uuid.UUID(channel_id_str)
+    except ValueError:
+        await callback.answer("❌ شناسه کانال نامعتبر است.", show_alert=True)
+        return
+
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(TelegramChannel).where(TelegramChannel.id.cast(str) == channel_id_str)
-        )
-        channel = result.scalar_one_or_none()
-        if not channel:
+        # Use session.get() which works correctly with UUID primary keys in asyncpg
+        channel = await session.get(TelegramChannel, channel_uuid)
+        if channel is None:
             await callback.answer("❌ کانال پیدا نشد.", show_alert=True)
             return
+
         channel.require_join = not channel.require_join
         new_status = channel.require_join
         name = channel.display_name or channel.username or str(channel.telegram_channel_id)
