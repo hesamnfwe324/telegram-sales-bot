@@ -258,7 +258,6 @@ async def _publish_via_bot_api(session: AsyncSession, challenge: Challenge) -> d
                     json={
                         "chat_id": channel_id,
                         "text": challenge.announcement,
-                        "parse_mode": "HTML",
                         "disable_web_page_preview": True,
                     },
                 )
@@ -472,6 +471,7 @@ async def run_challenge_scheduler() -> None:
                         latest = await session.scalar(select(Challenge).order_by(desc(Challenge.created_at)).limit(1))
                         due = (
                             latest is None
+                            or latest.status == "publish_failed"
                             or latest.created_at
                             < datetime.now(timezone.utc) - timedelta(hours=settings.CHALLENGE_INTERVAL_HOURS)
                             or latest.language != "en"
