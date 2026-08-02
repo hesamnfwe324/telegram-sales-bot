@@ -13,7 +13,7 @@ How it works
        allowed, statuses = await check_membership(bot, user_id)
 2. If allowed is True  → proceed normally.
 3. If allowed is False → call send_gate(message, statuses) to show the join screen.
-4. When the user clicks "✅ بررسی عضویت":
+4. When the user clicks "✅ Verify Membership":
        invalidate_cache(user_id)
        allowed, statuses = await check_membership(bot, user_id)
 
@@ -250,9 +250,9 @@ def build_gate_message(
     Returns ``(text, keyboard)`` ready to pass directly to ``message.answer()``.
     """
     lines = [
-        "<b>⛔ عضویت اجباری</b>",
+        "<b>⛔ Membership Required</b>",
         "",
-        "برای استفاده از ربات باید در <b>تمام</b> کانال‌های زیر عضو باشید:",
+        "To use this bot you must join <b>all</b> of the channels below:",
         "",
     ]
     buttons: list[list[InlineKeyboardButton]] = []
@@ -269,10 +269,10 @@ def build_gate_message(
 
     lines += [
         "",
-        "پس از عضویت در همه کانال‌ها روی دکمه زیر کلیک کنید:",
+        "Once you have joined all channels, click the button below:",
     ]
     buttons.append(
-        [InlineKeyboardButton(text="✅ بررسی عضویت", callback_data="fsub_verify")]
+        [InlineKeyboardButton(text="✅ Verify Membership", callback_data="fsub_verify")]
     )
 
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
