@@ -205,14 +205,20 @@ async def _send_registration(message: Message, challenge: Challenge | None, user
     )
 
 
-async def _send_challenge(message: Message, challenge: Challenge, public_user) -> None:
+async def _send_challenge(message: Message, challenge: Challenge, public_user) -> bool:
+    # Final fail-closed guard: every route that sends a challenge must verify
+    # membership, even if an older callback or deep link bypasses /start.
+    allowed, statuses = await _check_membership(message.from_user.id)
+    if not allowed:
+        await _send_membership_gate(message, statuses)
+        return False
     async with AsyncSessionLocal() as session:
         current_user = await session.scalar(
             select(PublicUser).where(PublicUser.telegram_id == message.from_user.id)
         )
         if current_user is None or current_user.terms_accepted_at is None:
             await _send_registration(message, challenge, public_user)
-            return
+            return False
         participant = await register_participant(
             session,
             challenge,
@@ -228,6 +234,7 @@ async def _send_challenge(message: Message, challenge: Challenge, public_user) -
         if not participant.answer_submitted
         else None,
     )
+    return True
 
 
 @router.message(CommandStart())
