@@ -50,23 +50,25 @@ def _channel_link(channel: TelegramChannel) -> str | None:
 
 
 async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str | None]]]:
-    """Fail closed unless the public bot verifies every active channel."""
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(TelegramChannel)
-            .where(TelegramChannel.is_active.is_(True))
-            .where(TelegramChannel.require_join.is_(True))
-            .order_by(TelegramChannel.created_at)
-        )
-        channels = list(result.scalars().all())
+    """Fail closed: if anything goes wrong the caller treats the user as not-verified."""
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(TelegramChannel)
+                .where(TelegramChannel.is_active.is_(True))
+                .where(TelegramChannel.require_join.is_(True))
+                .order_by(TelegramChannel.created_at)
+            )
+            channels = list(result.scalars().all())
+    except Exception as exc:
+        logger.error("membership_check_db_error", error=str(exc))
+        return False, [
+            {"name": "Official channels", "status": "unverified", "link": None}
+        ]
 
     if not channels or _bot is None:
         return False, [
-            {
-                "name": "Official channels",
-                "status": "unverified",
-                "link": None,
-            }
+            {"name": "Official channels", "status": "unverified", "link": None}
         ]
 
     async def check(channel: TelegramChannel) -> dict[str, str | None]:
@@ -97,23 +99,36 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
 async def _send_membership_gate(message: Message, statuses: list[dict[str, str | None]] | None = None) -> None:
     if statuses is None:
         _, statuses = await _check_membership(message.from_user.id)
-    lines = [
-        "<b>Join the official channels first</b>\n",
-        "To unlock the bot, you must join every official Upgrade Team channel below. "
-        "After joining, press <b>Check my membership</b>.",
-        "",
-    ]
-    buttons: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                text="📂 Join the official channels",
-                url=settings.REQUIRED_CHANNEL_FOLDER_LINK,
-            )
-        ],
-        [InlineKeyboardButton(text="🔄 Check my membership", callback_data="check_membership")],
-    ]
+
+    lines = ["<b>⛔ برای ورود ابتدا در کانال‌های زیر عضو شوید</b>
+"]
+    buttons: list[list[InlineKeyboardButton]] = []
+
+    for s in statuses:
+        name = s.get("name") or "Channel"
+        link = s.get("link")
+        status = s.get("status", "unverified")
+        icon = "✅" if status == "joined" else "❌"
+        label = f"{icon} {name}"
+        if link:
+            buttons.append([InlineKeyboardButton(text=label, url=link)])
+        else:
+            lines.append(f"{icon} {name}")
+
+    # Fallback folder link when no per-channel links are available
+    folder_link = settings.REQUIRED_CHANNEL_FOLDER_LINK
+    if folder_link and not any(s.get("link") for s in statuses):
+        buttons.append([
+            InlineKeyboardButton(text="📂 مشاهده همه کانال‌ها", url=folder_link)
+        ])
+
+    lines.append("")
+    lines.append("پس از عضویت در همه کانال‌ها، دکمه <b>✅ بررسی عضویت</b> را بزنید.")
+    buttons.append([InlineKeyboardButton(text="✅ بررسی عضویت", callback_data="check_membership")])
+
     await message.answer(
-        "\n".join(lines),
+        "
+".join(lines),
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
