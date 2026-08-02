@@ -100,8 +100,7 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
     if statuses is None:
         _, statuses = await _check_membership(message.from_user.id)
 
-    lines = ["<b>⛔ برای ورود ابتدا در کانال‌های زیر عضو شوید</b>
-"]
+    lines = ["<b>⛔ برای ورود ابتدا در کانال‌های زیر عضو شوید</b>\n"]
     buttons: list[list[InlineKeyboardButton]] = []
 
     for s in statuses:
@@ -127,8 +126,7 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
     buttons.append([InlineKeyboardButton(text="✅ بررسی عضویت", callback_data="check_membership")])
 
     await message.answer(
-        "
-".join(lines),
+        "\n".join(lines),
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
