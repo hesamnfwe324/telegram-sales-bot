@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import AsyncSessionLocal
 from app.models.channel import TelegramChannel
-from app.models.challenge import Challenge
+from app.models.challenge import Challenge, ChallengeParticipant
 from app.models.public_user import PublicUser
 from app.services.challenges.service import (
     accept_terms,
@@ -247,6 +247,16 @@ async def start(message: Message):
             if slug
             else await get_active_challenge(session)
         )
+        already_joined = (
+            await session.scalar(
+                select(ChallengeParticipant.id).where(
+                    ChallengeParticipant.challenge_id == challenge.id,
+                    ChallengeParticipant.telegram_id == message.from_user.id,
+                )
+            )
+            if challenge and challenge.status == "active"
+            else None
+        )
     if user.terms_accepted_at is None:
         await _send_registration(message, challenge if challenge and challenge.status == "active" else None, user)
         return
@@ -255,6 +265,15 @@ async def start(message: Message):
             "<b>Upgrade Team Challenges</b>\n\n"
             "There is no active challenge right now. Your profile is ready and you will be notified "
             "when the next RDP challenge opens.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=_profile_keyboard(),
+        )
+        return
+    if already_joined:
+        await message.answer(
+            "<b>You are already registered for the active challenge.</b>\n\n"
+            "Use the panel below to open the challenge or view your profile. "
+            "Sending /start again will not create another copy.",
             parse_mode=ParseMode.HTML,
             reply_markup=_profile_keyboard(),
         )
