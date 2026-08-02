@@ -7,7 +7,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -107,6 +107,23 @@ async def _require_membership(message: Message) -> bool:
     allowed, statuses = await check_membership(_bot, message.from_user.id)
     if not allowed:
         await send_gate(message, statuses)
+    return allowed
+
+
+async def _require_membership_cb(callback: CallbackQuery) -> bool:
+    """Return True if the user passes the force-subscription gate (callback version).
+
+    Uses callback.from_user.id (the real user), NOT callback.message.from_user.id
+    (which would be the bot itself).  Sends the gate message when blocked.
+    """
+    if _bot is None:
+        await callback.answer("⚠️ ربات در حال راه‌اندازی است. لطفاً چند ثانیه صبر کنید.", show_alert=True)
+        return False
+    allowed, statuses = await check_membership(_bot, callback.from_user.id)
+    if not allowed:
+        await callback.answer("ابتدا در همه کانال‌ها عضو شوید.", show_alert=True)
+        if callback.message:
+            await send_gate(callback.message, statuses)
     return allowed
 
 
@@ -322,13 +339,8 @@ async def challenge_help(message: Message):
 
 @router.callback_query(F.data.startswith("terms_accept"))
 async def accept_terms_callback(callback: CallbackQuery):
-    if _bot is not None:
-        allowed, statuses = await check_membership(_bot, callback.from_user.id)
-        if not allowed:
-            await callback.answer("ابتدا در همه کانال‌ها عضو شوید.", show_alert=True)
-            if callback.message:
-                await send_gate(callback.message, statuses)
-            return
+    if not await _require_membership_cb(callback):
+        return
     parts = (callback.data or "").split(":", 1)
     slug = parts[1] if len(parts) == 2 and parts[1] else ""
     user = callback.from_user
@@ -362,6 +374,9 @@ async def accept_terms_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "challenge_help")
 async def challenge_help_callback(callback: CallbackQuery):
+    # FIX: added membership check — previously this handler had no gate at all
+    if not await _require_membership_cb(callback):
+        return
     await callback.answer()
     if callback.message:
         await callback.message.answer(
@@ -376,14 +391,7 @@ async def challenge_help_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "active_challenge")
 async def active_challenge_callback(callback: CallbackQuery):
-    if _bot is None:
-        await callback.answer("ربات در حال راه‌اندازی است.", show_alert=True)
-        return
-    allowed, statuses = await check_membership(_bot, callback.from_user.id)
-    if not allowed:
-        await callback.answer("ابتدا در همه کانال‌ها عضو شوید.", show_alert=True)
-        if callback.message:
-            await send_gate(callback.message, statuses)
+    if not await _require_membership_cb(callback):
         return
     await callback.answer()
     if not callback.message:
@@ -406,14 +414,7 @@ async def active_challenge_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "my_referral")
 async def referral_callback(callback: CallbackQuery):
-    if _bot is None:
-        await callback.answer("ربات در حال راه‌اندازی است.", show_alert=True)
-        return
-    allowed, statuses = await check_membership(_bot, callback.from_user.id)
-    if not allowed:
-        await callback.answer("ابتدا در همه کانال‌ها عضو شوید.", show_alert=True)
-        if callback.message:
-            await send_gate(callback.message, statuses)
+    if not await _require_membership_cb(callback):
         return
     user = callback.from_user
     async with AsyncSessionLocal() as session:
@@ -437,8 +438,7 @@ async def referral_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("challenge:"))
 async def answer(callback: CallbackQuery):
-    if _bot is None:
-        await callback.answer("ربات در حال راه‌اندازی است.", show_alert=True)
+    if not await _require_membership_cb(callback):
         return
     try:
         _, slug, raw_index = callback.data.split(":", 2)
@@ -446,13 +446,6 @@ async def answer(callback: CallbackQuery):
     except (AttributeError, ValueError):
         await callback.answer("Invalid answer. Please try again.", show_alert=True)
         return
-    if _bot is not None:
-        allowed, _ = await check_membership(_bot, callback.from_user.id)
-        if not allowed:
-            await callback.answer(
-                "ابتدا عضویت خود را تأیید کنید.", show_alert=True
-            )
-            return
     async with AsyncSessionLocal() as session:
         challenge = await session.scalar(select(Challenge).where(Challenge.slug == slug))
         if not challenge or challenge.status != "active":
@@ -544,9 +537,103 @@ async def fsub_verify_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "show_leaderboard")
 async def show_leaderboard_callback(callback: CallbackQuery):
+    # FIX: previously called show_leaderboard(callback.message) which checked
+    # callback.message.from_user.id (the BOT's ID) instead of the real user's ID,
+    # effectively bypassing the membership gate entirely.
+    if not await _require_membership_cb(callback):
+        return
     await callback.answer()
-    if callback.message:
-        await show_leaderboard(callback.message)
+    if not callback.message:
+        return
+    async with AsyncSessionLocal() as session:
+        challenge = await get_active_challenge(session)
+        if not challenge:
+            await callback.message.answer("There is no active challenge right now.")
+            return
+        rows = await leaderboard(session, challenge.id)
+    lines = ["🏆 <b>UPGRADE TEAM LEADERBOARD</b>", ""]
+    for i, row in enumerate(rows, 1):
+        name = (row.username and f"@{row.username}") or row.display_name or "Participant"
+        lines.append(f"<b>{i}.</b> {escape(name)}  ·  {row.points} points")
+    await callback.message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+# ── chat member update handler (leave detection) ───────────────────────────
+
+@router.chat_member()
+async def on_chat_member_updated(event: ChatMemberUpdated) -> None:
+    """Detect when a user leaves one of the required channels.
+
+    Telegram sends chat_member updates to the bot only when the bot is an
+    admin of the channel.  If the bot is not admin, these events are silently
+    skipped and the 60-second cache TTL acts as the fallback.
+
+    When a leave IS detected:
+    1. The user's membership cache is immediately invalidated.
+    2. A lock message is sent to the user so they know they lost access.
+    """
+    # Only care about actual users leaving/being kicked — ignore joins and bot changes
+    old_status = event.old_chat_member.status
+    new_status = event.new_chat_member.status
+    left_statuses = {"left", "kicked", "banned"}
+
+    if new_status not in left_statuses or old_status in left_statuses:
+        # Not a leave event (e.g. join, admin change, etc.)
+        return
+
+    user = event.new_chat_member.user
+    if user.is_bot:
+        return
+
+    # Check if this channel is one of the required ones
+    required_raw = (settings.REQUIRED_CHANNELS or "").strip()
+    if not required_raw:
+        return
+
+    required_channels = [c.strip() for c in required_raw.split(",") if c.strip()]
+    event_chat_id = str(event.chat.id)
+    event_chat_username = f"@{event.chat.username}" if event.chat.username else None
+
+    is_required = any(
+        ch == event_chat_id or (event_chat_username and ch == event_chat_username)
+        for ch in required_channels
+    )
+
+    if not is_required:
+        return
+
+    # Invalidate cache immediately so the next bot interaction re-checks membership
+    invalidate_cache(user.id)
+    logger.info(
+        "force_sub_user_left_channel",
+        user_id=user.id,
+        chat_id=event.chat.id,
+        chat_username=event.chat.username,
+    )
+
+    # Notify the user that they lost access
+    if _bot is not None:
+        try:
+            _, statuses = await check_membership(_bot, user.id)
+            text, kb = build_gate_message(statuses)
+            lock_notice = (
+                "⛔ <b>دسترسی به ربات قطع شد</b>\n\n"
+                "شما از یکی از کانال‌های اجباری خارج شدید.\n"
+                "برای استفاده مجدد از ربات، دوباره عضو شوید و سپس /start را بزنید.\n\n"
+            )
+            await _bot.send_message(
+                user.id,
+                lock_notice + text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except Exception as exc:
+            # User may have blocked the bot — log and move on
+            logger.warning(
+                "force_sub_leave_notify_failed",
+                user_id=user.id,
+                error=str(exc),
+            )
 
 
 # ── bot lifecycle ──────────────────────────────────────────────────────────
@@ -554,7 +641,10 @@ async def show_leaderboard_callback(callback: CallbackQuery):
 async def _run_polling(bot: Bot, dispatcher: Dispatcher) -> None:
     while True:
         try:
-            await dispatcher.start_polling(bot, allowed_updates=["message", "callback_query"])
+            await dispatcher.start_polling(
+                bot,
+                allowed_updates=["message", "callback_query", "chat_member"],
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -587,7 +677,8 @@ async def setup_public_bot() -> None:
             await _bot.set_webhook(
                 url=url,
                 drop_pending_updates=False,
-                allowed_updates=["message", "callback_query"],
+                # FIX: added "chat_member" so Telegram pushes leave events to webhook
+                allowed_updates=["message", "callback_query", "chat_member"],
             )
             logger.info("public_bot_webhook_set", url=url)
             return
