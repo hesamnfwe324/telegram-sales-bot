@@ -108,35 +108,58 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
         ]
 
     async def check(channel: TelegramChannel) -> dict[str, str | None]:
-        link = _channel_link(channel)
-        name = channel.display_name or channel.username or str(channel.telegram_channel_id)
-        try:
-            member = await _bot.get_chat_member(
-                chat_id=channel.telegram_channel_id,
-                user_id=telegram_id,
-            )
-            raw_status = getattr(member.status, "value", member.status)
-            is_member = raw_status in {"creator", "administrator", "member"}
-            if raw_status == "restricted":
-                is_member = bool(getattr(member, "is_member", False))
-            status = "joined" if is_member else "not_joined"
-            logger.info(
-                "required_channel_membership_checked",
-                telegram_id=telegram_id,
-                channel_id=channel.telegram_channel_id,
-                status=status,
-                telegram_status=raw_status,
-            )
-            return {"name": name, "status": status, "link": link}
-        except Exception as exc:
-            logger.warning(
-                "required_channel_membership_check_failed",
-                telegram_id=telegram_id,
-                channel_id=channel.telegram_channel_id,
-                channel_name=name,
-                error=str(exc),
-            )
-            return {"name": name, "status": "unverified", "link": link}
+          link = _channel_link(channel)
+          name = channel.display_name or channel.username or str(channel.telegram_channel_id)
+
+          # Try numeric channel ID first, then fall back to @username.
+          # getChatMember works with numeric IDs when the bot is in the channel,
+          # and also accepts @username for public channels without admin rights.
+          # Trying both maximises coverage when the bot is not an admin.
+          chat_ids_to_try: list = [channel.telegram_channel_id]
+          if channel.username:
+              chat_ids_to_try.append(f"@{channel.username.lstrip('@')}")
+
+          last_exc: Exception | None = None
+          for chat_id in chat_ids_to_try:
+              try:
+                  member = await _bot.get_chat_member(
+                      chat_id=chat_id,
+                      user_id=telegram_id,
+                  )
+                  raw_status = getattr(member.status, "value", member.status)
+                  is_member = raw_status in {"creator", "administrator", "member"}
+                  if raw_status == "restricted":
+                      is_member = bool(getattr(member, "is_member", False))
+                  status = "joined" if is_member else "not_joined"
+                  logger.info(
+                      "required_channel_membership_checked",
+                      telegram_id=telegram_id,
+                      channel_id=channel.telegram_channel_id,
+                      chat_id_used=str(chat_id),
+                      status=status,
+                      telegram_status=raw_status,
+                  )
+                  return {"name": name, "status": status, "link": link}
+              except Exception as exc:
+                  last_exc = exc
+                  logger.warning(
+                      "membership_check_attempt_failed",
+                      telegram_id=telegram_id,
+                      channel_id=channel.telegram_channel_id,
+                      chat_id_used=str(chat_id),
+                      error=str(exc),
+                  )
+                  continue
+
+          # All attempts failed — keep the gate closed.
+          logger.error(
+              "required_channel_membership_check_failed",
+              telegram_id=telegram_id,
+              channel_id=channel.telegram_channel_id,
+              channel_name=name,
+              error=str(last_exc),
+          )
+          return {"name": name, "status": "unverified", "link": link}
 
     statuses = await asyncio.gather(*(check(channel) for channel in required_channels))
     allowed = all(item["status"] == "joined" for item in statuses)
