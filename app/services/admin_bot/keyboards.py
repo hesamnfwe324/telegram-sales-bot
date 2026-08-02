@@ -23,16 +23,25 @@ def main_menu_kb() -> InlineKeyboardMarkup:
 def force_sub_menu_kb(channels: list) -> InlineKeyboardMarkup:
     """Keyboard for the force-subscription management screen.
 
-    Each channel gets its own toggle button showing its current state.
-    A Back button returns to the main menu.
+    Each channel gets:
+      • a toggle button (enable / disable require_join)
+      • a 🗑 remove button only for manually-added channels (account_id IS None)
+
+    A "➕ اضافه کردن کانال" button lets the admin add a new public channel
+    directly by @username without running a userbot scan.
     """
     builder = InlineKeyboardBuilder()
     for ch in channels:
         name = ch.display_name or ch.username or str(ch.telegram_channel_id)
         icon = "✅" if ch.require_join else "❌"
-        # Truncate long names so the button stays readable
-        label = f"{icon} {name[:30]}"
+        label = f"{icon} {name[:28]}"
         builder.button(text=label, callback_data=f"fsub_toggle_{ch.id}")
+        # Show a remove button only for manually-added channels
+        if ch.account_id is None:
+            builder.button(text="🗑", callback_data=f"fsub_remove_{ch.id}")
+
+    # "Add channel" button always present
+    builder.button(text="➕ اضافه کردن کانال", callback_data="fsub_add")
     builder.button(text="🔙 منوی اصلی", callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
