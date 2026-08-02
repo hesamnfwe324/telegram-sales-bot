@@ -50,7 +50,13 @@ def _channel_link(channel: TelegramChannel) -> str | None:
 
 
 async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str | None]]]:
-    """Fail closed: if anything goes wrong the caller treats the user as not-verified."""
+    """Check every channel selected as mandatory by the administrator.
+
+    If the required-channel set cannot be loaded, the check fails closed.
+    Once at least one channel is selected, every channel must be verified before
+    the user can continue. Telegram API failures remain unverified so a
+    misconfigured channel can never accidentally bypass the gate.
+    """
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -66,7 +72,22 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
             {"name": "Official channels", "status": "unverified", "link": None}
         ]
 
-    if not channels or _bot is None:
+    if not channels:
+        logger.warning(
+            "membership_check_no_required_channels",
+            telegram_id=telegram_id,
+            note="No mandatory channels are configured; refusing access until admin config is verified.",
+        )
+        return False, [
+            {"name": "Official channels", "status": "unverified", "link": None}
+        ]
+
+    if _bot is None:
+        logger.error(
+            "membership_check_bot_unavailable",
+            telegram_id=telegram_id,
+            required_channels=len(channels),
+        )
         return False, [
             {"name": "Official channels", "status": "unverified", "link": None}
         ]
@@ -83,17 +104,36 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
             is_member = raw_status in {"creator", "administrator", "member"}
             if raw_status == "restricted":
                 is_member = bool(getattr(member, "is_member", False))
-            return {"name": name, "status": "joined" if is_member else "not_joined", "link": link}
+            status = "joined" if is_member else "not_joined"
+            logger.info(
+                "required_channel_membership_checked",
+                telegram_id=telegram_id,
+                channel_id=channel.telegram_channel_id,
+                status=status,
+                telegram_status=raw_status,
+            )
+            return {"name": name, "status": status, "link": link}
         except Exception as exc:
             logger.warning(
                 "required_channel_membership_check_failed",
+                telegram_id=telegram_id,
                 channel_id=channel.telegram_channel_id,
+                channel_name=name,
                 error=str(exc),
             )
             return {"name": name, "status": "unverified", "link": link}
 
     statuses = await asyncio.gather(*(check(channel) for channel in channels))
-    return all(item["status"] == "joined" for item in statuses), list(statuses)
+    allowed = all(item["status"] == "joined" for item in statuses)
+    logger.info(
+        "membership_check_complete",
+        telegram_id=telegram_id,
+        required_channels=len(statuses),
+        allowed=allowed,
+        unverified=sum(item["status"] == "unverified" for item in statuses),
+        not_joined=sum(item["status"] == "not_joined" for item in statuses),
+    )
+    return allowed, list(statuses)
 
 
 async def _send_membership_gate(message: Message, statuses: list[dict[str, str | None]] | None = None) -> None:

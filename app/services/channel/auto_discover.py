@@ -88,6 +88,11 @@ async def discover_and_register_channels(userbot_manager, account_id: str) -> di
 
           if tg_id in existing_records:
               record = existing_records[tg_id]
+               # Keep the public-bot join button usable after a channel
+               # username/title changes. Do not touch require_join here:
+               # that flag is an explicit administrator choice.
+               record.username = ch["username"]
+               record.display_name = ch["title"]
               if not record.is_active:
                   record.is_active = True
                   reactivated += 1
@@ -100,6 +105,13 @@ async def discover_and_register_channels(userbot_manager, account_id: str) -> di
                   display_name=ch["title"],
                   language="en",
                   is_active=True,
+                   metadata_={
+                       "join_link": (
+                           f"https://t.me/{ch['username'].lstrip('@')}"
+                           if ch["username"]
+                           else None
+                       )
+                   },
               )
               session.add(channel)
               added += 1
