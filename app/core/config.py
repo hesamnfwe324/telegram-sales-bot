@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     ADMIN_TELEGRAM_IDS: str = ""
     TELEGRAM_PUBLIC_BOT_TOKEN: str = ""
     PUBLIC_BOT_USERNAME: str = ""
+    # Used when a required channel is private or has no public username.
+    # It can be overridden in Render with a Telegram channel-folder link.
+    REQUIRED_CHANNEL_FOLDER_LINK: str = "https://t.me/addlist/wouQ50YXz_wwZGE0"
 
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"

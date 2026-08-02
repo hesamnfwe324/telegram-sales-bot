@@ -50,41 +50,45 @@ def _channel_link(channel: TelegramChannel) -> str | None:
 
 
 async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str | None]]]:
-    """Check membership in every active channel registered by the administrator.
+    """Check membership in every channel explicitly marked as mandatory.
 
-    The active channel records and their numeric Telegram IDs are the source of
-    truth. Telegram API failures remain unverified so a misconfigured channel
-    can never accidentally bypass the gate.
+    ``require_join`` is controlled from the admin panel and is deliberately
+    separate from ``is_active``. An active channel may be used for publishing
+    without being part of the public-bot gate. Telegram API failures remain
+    unverified so a misconfigured mandatory channel can never accidentally
+    bypass the gate.
     """
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(TelegramChannel)
                 .where(TelegramChannel.is_active.is_(True))
+                .where(TelegramChannel.require_join.is_(True))
                 .order_by(TelegramChannel.created_at)
             )
-            channels = list(result.scalars().all())
+            required_channels = list(result.scalars().all())
     except Exception as exc:
         logger.error("membership_check_db_error", error=str(exc))
         return False, [
             {"name": "Official channels", "status": "unverified", "link": None}
         ]
 
-    if not channels:
+    # No mandatory channels means the administrator has intentionally disabled
+    # the gate. Do not lock every user out behind a fake "Official channels"
+    # row, and do not call Telegram unnecessarily.
+    if not required_channels:
         logger.warning(
-            "membership_check_no_active_channels",
+            "membership_check_no_required_channels",
             telegram_id=telegram_id,
-            note="No active channels are registered; refusing access until admin config is verified.",
+            note="No active channels are marked require_join; membership gate is disabled.",
         )
-        return False, [
-            {"name": "Official channels", "status": "unverified", "link": None}
-        ]
+        return True, []
 
     if _bot is None:
         logger.error(
             "membership_check_bot_unavailable",
             telegram_id=telegram_id,
-            required_channels=len(channels),
+            required_channels=len(required_channels),
         )
         return False, [
             {"name": "Official channels", "status": "unverified", "link": None}
@@ -121,7 +125,7 @@ async def _check_membership(telegram_id: int) -> tuple[bool, list[dict[str, str 
             )
             return {"name": name, "status": "unverified", "link": link}
 
-    statuses = await asyncio.gather(*(check(channel) for channel in channels))
+    statuses = await asyncio.gather(*(check(channel) for channel in required_channels))
     allowed = all(item["status"] == "joined" for item in statuses)
     logger.info(
         "membership_check_complete",
@@ -138,7 +142,11 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
     if statuses is None:
         _, statuses = await _check_membership(message.from_user.id)
 
-    lines = ["<b>⛔ برای ورود ابتدا در کانال‌های زیر عضو شوید</b>\n"]
+    lines = [
+        "<b>⛔ عضویت اجباری</b>\n",
+        "برای استفاده از ربات، ابتدا در همه کانال‌های زیر عضو شوید:",
+        "",
+    ]
     buttons: list[list[InlineKeyboardButton]] = []
 
     for s in statuses:
@@ -152,8 +160,17 @@ async def _send_membership_gate(message: Message, statuses: list[dict[str, str |
         else:
             lines.append(f"{icon} {name}")
 
+    # Private channels do not expose a public username, so they cannot always
+    # produce an individual t.me link. Keep the folder link as a second,
+    # reliable way into the required channels in that case.
+    folder_link = settings.REQUIRED_CHANNEL_FOLDER_LINK
+    if folder_link and not any(s.get("link") for s in statuses):
+        buttons.append(
+            [InlineKeyboardButton(text="📂 مشاهده همه کانال‌ها", url=folder_link)]
+        )
+
     lines.append("")
-    lines.append("پس از عضویت در همه کانال‌ها، دکمه <b>✅ بررسی عضویت</b> را بزنید.")
+    lines.append("بعد از عضویت در همه کانال‌ها، دکمه زیر را بزنید:")
     buttons.append([InlineKeyboardButton(text="✅ بررسی عضویت", callback_data="check_membership")])
 
     await message.answer(
