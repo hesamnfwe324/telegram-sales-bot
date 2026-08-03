@@ -18,6 +18,7 @@ SYNC FIX (Jul 2026):
   for it before scanning so all channels post together in the same batch.
 """
 import asyncio
+import os
 import hashlib
 import io
 import random
@@ -333,6 +334,10 @@ async def _compute_cooldowns(channels) -> dict[str, int]:
 
 
 async def run_auto_poster(userbot_manager):
+    # Safety stop: do not send VPS/RDP posts until persistent 3-hour cooldown is verified.
+    if os.getenv("AUTO_POSTER_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        logger.warning("auto_poster_disabled_by_config")
+        return
     """
     Main auto-poster loop.
 
