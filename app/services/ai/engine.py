@@ -13,7 +13,20 @@ import time
 
 logger = get_logger(__name__)
 
+# Bug 2 fix: track a fingerprint of the active provider/key so the client is
+# recreated whenever the API key or provider changes (e.g. key rotation,
+# Groq ↔ OpenAI switch) — previously the singleton would serve the old key
+# until process restart.
 _client: Optional[AsyncOpenAI] = None
+_client_fingerprint: str = ""
+
+
+def _get_client_fingerprint() -> str:
+    """Stable string that changes whenever the active provider or key changes."""
+    if settings.GROQ_API_KEY:
+        return f"groq:{settings.GROQ_API_KEY[:16]}:{settings.GROQ_BASE_URL}"
+    return f"openai:{settings.OPENAI_API_KEY[:16]}"
+
 
 # ── Groq quota cooldown ──────────────────────────────────────────────────────
 # When quota is exhausted we pause AI calls for QUOTA_COOLDOWN seconds
@@ -42,8 +55,11 @@ def is_ai_available() -> bool:
 
 
 def get_ai_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
+    global _client, _client_fingerprint
+    fp = _get_client_fingerprint()
+    # Bug 2 fix: recreate client when provider/key changes, not only when None
+    if _client is None or fp != _client_fingerprint:
+        _client_fingerprint = fp
         if settings.GROQ_API_KEY:
             _client = AsyncOpenAI(
                 api_key=settings.GROQ_API_KEY,
@@ -120,7 +136,14 @@ async def generate_reply(
 
     try:
         response = await client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content or ""
+        # Bug 4 fix: guard against None/empty response — provider can return empty choices
+        # or null message content, which caused AttributeError/IndexError downstream.
+        if not response or not response.choices:
+            raise ValueError("AI returned an empty response (no choices)")
+        msg = response.choices[0].message
+        if msg is None or msg.content is None:
+            raise ValueError("AI response message or content is None")
+        content = msg.content or ""
         tokens = response.usage.total_tokens if response.usage else 0
         logger.info("ai_reply_generated", tokens=tokens, model=get_model())
         return content, tokens
@@ -156,7 +179,13 @@ async def generate_content(prompt: str, system: str = "", temperature: float = 0
             temperature=temperature,
             max_tokens=2000,
         )
-        return response.choices[0].message.content or ""
+        # Bug 4 fix: guard against None/empty response in generate_content too
+        if not response or not response.choices:
+            raise ValueError("AI returned an empty response (no choices)")
+        msg = response.choices[0].message
+        if msg is None or msg.content is None:
+            raise ValueError("AI response message or content is None")
+        return msg.content or ""
     except Exception as e:
         if _is_quota_error(e):
             _mark_quota_exhausted()
