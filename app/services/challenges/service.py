@@ -111,21 +111,30 @@ def build_announcement(content: dict[str, Any], slug: str, username: str | None,
     link = _public_start_link(slug, username)
     answers = content.get("answers", [])
     answer_labels = ["A", "B", "C", "D"]
+
+    # Hard-cap lengths so the message never exceeds Telegram's 4096-char limit.
+    # The link is placed BOTH near the top and at the bottom — so it's visible
+    # even when users don't scroll, and survives any edge-case truncation.
+    question_text = str(content.get("question", ""))[:600]
     options_block = "\n".join(
-        f"   {answer_labels[i]}. {ans}"
+        f"   {answer_labels[i]}. {str(ans)[:90]}"
         for i, ans in enumerate(answers[:4])
     )
+    reward_text = str(content.get("reward", ""))[:120]
+
     return (
         "⚡ NEW CHALLENGE IS LIVE — UPGRADE TEAM\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"🔥 {content['title']}\n\n"
-        f"📌 {content['question']}\n\n"
+        f"👉 ANSWER HERE: {link}\n\n"
+        "─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─\n\n"
+        f"📌 {question_text}\n\n"
         f"Choose your answer:\n{options_block}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏆 Prize: {content['reward']}\n"
-        f"⏳ Closes: {end_text}  |  One answer per user\n"
+        f"🏆 Prize: {reward_text}\n"
+        f"⏳ Closes: {end_text}  |  One attempt per user\n"
         f"🚀 Speed matters — fastest correct wins!\n\n"
-        f"👇 TAP TO ANSWER NOW:\n{link}\n\n"
+        f"👇 TAP TO JOIN: {link}\n\n"
         f"{hashtags}"
     )
 
