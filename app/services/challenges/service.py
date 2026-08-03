@@ -134,7 +134,6 @@ def build_announcement(content: dict[str, Any], slug: str, username: str | None,
         f"🏆 Prize: {reward_text}\n"
         f"⏳ Closes: {end_text}  |  One attempt per user\n"
         f"🚀 Speed matters — fastest correct wins!\n\n"
-        f"👇 TAP TO JOIN: {link}\n\n"
         f"{hashtags}"
     )
 
