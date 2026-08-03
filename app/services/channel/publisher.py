@@ -562,6 +562,6 @@ async def publish_post(
     post.published_at = datetime.now(timezone.utc)
 
     logger.info("post_publish_complete", post_id=str(post.id),
-                published=published_count, total=len(channel_ids))
+                published=published_count, total=len(channel_ids_resolved))
     return results
 
