@@ -363,10 +363,24 @@ async def publish_post(
         return {}
 
     results = {}
-    channel_ids = post.channel_ids or []
+    # Bug 5 fix: normalize channel_ids from DB — JSONB may return a scalar, dict,
+    # or malformed UUID string; iterate only a proper list/tuple and skip invalid entries.
+    raw_ids = post.channel_ids
+    if not isinstance(raw_ids, (list, tuple)):
+        if raw_ids is not None:
+            logger.warning("channel_ids_not_a_list", post_id=str(post.id), type=type(raw_ids).__name__)
+        raw_ids = []
 
-    for channel_id_str in channel_ids:
-        channel_id = uuid.UUID(channel_id_str) if isinstance(channel_id_str, str) else channel_id_str
+    channel_ids_resolved: list[uuid.UUID] = []
+    for raw_id in raw_ids:
+        try:
+            channel_ids_resolved.append(
+                uuid.UUID(raw_id) if isinstance(raw_id, str) else uuid.UUID(str(raw_id))
+            )
+        except (ValueError, TypeError, AttributeError) as exc:
+            logger.warning("invalid_channel_id_skipped", post_id=str(post.id), raw_id=repr(raw_id), error=str(exc))
+
+    for channel_id in channel_ids_resolved:
         result = await session.execute(
             select(TelegramChannel).where(TelegramChannel.id == channel_id)
         )
