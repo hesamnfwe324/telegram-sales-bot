@@ -492,19 +492,15 @@ async def run_challenge_scheduler() -> None:
             if settings.CHALLENGE_AUTO_ENABLED:
                 async with AsyncSessionLocal() as session:
                     active = await get_active_challenge(session)
-                    # Only publish on startup when there is truly no active challenge.
-                    # The old condition (active.created_at < process_started_at) was always
-                    # True for any existing challenge, causing a new challenge post on every
-                    # Render restart — completely ignoring the 4-hour interval.
-                    startup_due = bool(
-                        startup_publish_pending
-                        and active is None
-                    )
+                    # The product contract requires a fresh challenge on every
+                    # process start, including when the previous challenge is still active.
+                    # The normal 4-hour cadence remains enforced after this startup run
+                    # by the active challenge's ends_at and the due check below.
+                    startup_due = bool(startup_publish_pending)
 
                     if startup_due:
-                        # A deploy/restart used to publish a fresh challenge. Do that
-                        # once per process while preventing two active challenges from
-                        # competing for answers in the public bot.
+                        # Expire the previous active challenge before publishing the
+                        # startup challenge so only the new challenge accepts answers.
                         if active is not None:
                             active.status = "expired"
                             await session.flush()
