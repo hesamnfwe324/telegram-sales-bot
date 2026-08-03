@@ -492,9 +492,13 @@ async def run_challenge_scheduler() -> None:
             if settings.CHALLENGE_AUTO_ENABLED:
                 async with AsyncSessionLocal() as session:
                     active = await get_active_challenge(session)
+                    # Only publish on startup when there is truly no active challenge.
+                    # The old condition (active.created_at < process_started_at) was always
+                    # True for any existing challenge, causing a new challenge post on every
+                    # Render restart — completely ignoring the 4-hour interval.
                     startup_due = bool(
                         startup_publish_pending
-                        and (active is None or active.created_at < process_started_at)
+                        and active is None
                     )
 
                     if startup_due:
