@@ -6,8 +6,10 @@
 
   export SECRET_KEY="${SECRET_KEY:-change-this-secret-key-in-production}"
   export API_KEY="${API_KEY:-change-this-api-key-in-production}"
-  export REDIS_URL="${REDIS_URL:-redis://localhost:6379/0}"
-  export REDIS_QUEUE_URL="${REDIS_QUEUE_URL:-redis://localhost:6379/1}"
+  # Redis is optional on Render; the app uses in-process fakeredis when unset.
+  # Do not point production at a nonexistent localhost Redis server.
+  export REDIS_URL="${REDIS_URL:-}"
+  export REDIS_QUEUE_URL="${REDIS_QUEUE_URL:-}"
 
   # Fix DATABASE_URL format for asyncpg (only if DATABASE_URL is non-empty)
   if [ -n "${DATABASE_URL:-}" ]; then
@@ -16,7 +18,8 @@
     export DATABASE_URL
     echo "[start] DATABASE_URL driver: ${DATABASE_URL%%://*}"
   else
-    echo "[start] WARNING: DATABASE_URL is not set — using fallback in config"
+    echo "[start] ERROR: DATABASE_URL is not set; refusing to use a local fallback." >&2
+    exit 1
   fi
 
   mkdir -p sessions data/training logs
