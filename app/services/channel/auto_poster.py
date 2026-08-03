@@ -44,7 +44,7 @@ COOLDOWN_SECONDS = MIN_INTERVAL_SECONDS
 
 # If any channel's cooldown expires within this window, wait for it so all
 # channels post in a single synchronised batch instead of drifting apart.
-SYNC_WINDOW_SECONDS = 1200   # 20 minutes
+SYNC_WINDOW_SECONDS = 5400   # 90 minutes — wide enough to re-converge staggered channels
 
 
 def _cooldown_key(channel_id: str) -> str:
@@ -141,9 +141,16 @@ async def release_channel_lock(channel_id: str) -> None:
 
 
 async def mark_channel_posted(channel_id: str) -> None:
-    from app.cache.redis_client import cache_set
-    await cache_set(_cooldown_key(channel_id), str(_time.time()), ttl=COOLDOWN_SECONDS + 300)
-    _last_post_time[channel_id] = asyncio.get_running_loop().time()
+      try:
+          from app.cache.redis_client import cache_set
+          await cache_set(_cooldown_key(channel_id), str(_time.time()), ttl=COOLDOWN_SECONDS + 300)
+      except Exception as _redis_err:
+          logger.warning(
+              "autoposter_mark_posted_redis_failed",
+              channel_id=channel_id,
+              error=str(_redis_err)[:80],
+          )
+      _last_post_time[channel_id] = asyncio.get_running_loop().time()
 
 
 _recent_hashes: deque = deque(maxlen=300)
@@ -332,7 +339,64 @@ async def _compute_cooldowns(channels) -> dict[str, int]:
     return cooldowns
 
 
-async def run_auto_poster(userbot_manager):
+async def _sync_all_cooldowns_on_startup() -> None:
+      """Set ALL channel cooldowns to the same timestamp on startup.
+
+      When the process restarts, fakeredis is wiped and every channel looks
+      "ready".  This function reads the most recent published auto-poster post
+      from the DB and pre-populates all channel cooldown keys with that timestamp,
+      so all channels expire together and post in one synchronised batch instead
+      of staggered 20-30 min bursts.
+      """
+      try:
+          from app.db.session import AsyncSessionLocal
+          from app.models.post import Post
+          from sqlalchemy import select
+          from app.cache.redis_client import cache_set
+
+          async with AsyncSessionLocal() as _session:
+              latest = await _session.scalar(
+                  select(Post.published_at)
+                  .where(
+                      Post.status == "published",
+                      Post.content_type == "announcement",
+                  )
+                  .order_by(Post.published_at.desc())
+                  .limit(1)
+              )
+              if latest is None:
+                  logger.info("autoposter_startup_sync_no_posts_found")
+                  return
+
+              posted_ts = latest.timestamp()
+              elapsed = _time.time() - posted_ts
+              remaining = max(0, int(COOLDOWN_SECONDS - elapsed))
+              if remaining == 0:
+                  logger.info("autoposter_startup_sync_cooldown_already_expired")
+                  return
+
+              channels = await _get_active_channels()
+              synced = 0
+              for ch in channels:
+                  try:
+                      await cache_set(
+                          _cooldown_key(str(ch.id)),
+                          str(posted_ts),
+                          ttl=remaining + 120,
+                      )
+                      synced += 1
+                  except Exception:
+                      pass
+              logger.info(
+                  "autoposter_startup_sync_done",
+                  channels_synced=synced,
+                  remaining_minutes=remaining // 60,
+              )
+      except Exception as exc:
+          logger.warning("autoposter_startup_sync_failed", error=str(exc)[:100])
+
+
+    async def run_auto_poster(userbot_manager):
     """
     Main auto-poster loop.
 
@@ -347,7 +411,11 @@ async def run_auto_poster(userbot_manager):
     logger.info("auto_poster_started — rdp_only_mode")
     await asyncio.sleep(30)
 
-    while True:
+      # Sync all cooldowns from DB so channels that drifted apart during a previous
+      # process lifetime all expire at the same time → one batch every 3 hours.
+      await _sync_all_cooldowns_on_startup()
+
+      while True:
         try:
             from app.cache.redis_client import cache_get
             if await cache_get("system:posting_paused"):
