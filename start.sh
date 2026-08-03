@@ -21,11 +21,28 @@
 
   mkdir -p sessions data/training logs
 
-  echo "[start] Running DB migrations (timeout 120s)..."
+  echo "[start] Running DB migrations (up to 5 attempts)..."
   # Do not start a partially migrated application. The membership gate depends
   # on the current schema, so a skipped migration can silently bypass it.
-  if ! timeout 120 env -u PYTHONPATH alembic upgrade head; then
-    echo "[fatal] Database migration failed or timed out; refusing to start."
+  # Retry loop: on free-tier Render, rolling deploys can briefly saturate the
+  # DB connection pool. Retrying with back-off survives transient failures.
+  MIGRATION_OK=0
+  for attempt in 1 2 3 4 5; do
+    echo "[start] Migration attempt $attempt/5..."
+    if timeout 120 env -u PYTHONPATH alembic upgrade head; then
+      MIGRATION_OK=1
+      echo "[start] Migrations succeeded on attempt $attempt."
+      break
+    fi
+    echo "[start] Migration attempt $attempt failed."
+    if [ "$attempt" -lt 5 ]; then
+      echo "[start] Waiting 15s before retry..."
+      sleep 15
+    fi
+  done
+
+  if [ "$MIGRATION_OK" -ne 1 ]; then
+    echo "[fatal] Database migration failed after 5 attempts; refusing to start."
     exit 1
   fi
 
@@ -35,4 +52,3 @@
     --port "${PORT:-10000}" \
     --log-level info \
     --loop asyncio
-  
