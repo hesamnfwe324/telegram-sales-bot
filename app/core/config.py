@@ -18,13 +18,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     API_KEY: str = "change-me-api-key"
 
-    DATABASE_URL: str = "postgresql+asyncpg://localhost/dev"
+    DATABASE_URL: str = ""
     DATABASE_SSL: bool = False
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 5
 
-    REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_QUEUE_URL: str = "redis://localhost:6379/1"
+    REDIS_URL: str = ""
+    REDIS_QUEUE_URL: str = ""
     REDIS_CACHE_TTL: int = 3600
 
     TELEGRAM_API_ID: int = 2040
