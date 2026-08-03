@@ -477,11 +477,15 @@ async def run_challenge_scheduler() -> None:
     from app.db.session import AsyncSessionLocal
     from app.services.challenges.public_bot import get_public_bot_username
 
+    process_started_at = datetime.now(timezone.utc)
+    startup_publish_pending = bool(settings.CHALLENGE_AUTO_ENABLED)
+
     logger.info(
         "challenge_scheduler_started",
         interval_hours=settings.CHALLENGE_INTERVAL_HOURS,
         duration_hours=settings.CHALLENGE_DURATION_HOURS,
         enabled=settings.CHALLENGE_AUTO_ENABLED,
+        startup_publish=True,
     )
 
     while True:
@@ -489,7 +493,45 @@ async def run_challenge_scheduler() -> None:
             if settings.CHALLENGE_AUTO_ENABLED:
                 async with AsyncSessionLocal() as session:
                     active = await get_active_challenge(session)
-                    if not active:
+                    startup_due = bool(
+                        startup_publish_pending
+                        and (active is None or active.created_at < process_started_at)
+                    )
+
+                    if startup_due:
+                        # A deploy/restart used to publish a fresh challenge. Do that
+                        # once per process while preventing two active challenges from
+                        # competing for answers in the public bot.
+                        if active is not None:
+                            active.status = "expired"
+                            await session.flush()
+                            logger.info(
+                                "automatic_challenge_expired_on_startup",
+                                challenge_id=str(active.id),
+                            )
+
+                        recent_rows = await session.execute(
+                            select(Challenge.title).order_by(desc(Challenge.created_at)).limit(20)
+                        )
+                        recent_titles_for_topic = [r[0] for r in recent_rows.all() if r[0]]
+                        auto_topic = pick_next_topic(recent_titles_for_topic)
+                        challenge, results = await create_and_publish_challenge(
+                            session,
+                            topic=auto_topic,
+                            language="en",
+                            public_bot_username=get_public_bot_username(),
+                        )
+                        published = sum(
+                            1 for result in results.values() if result.get("status") == "published"
+                        )
+                        startup_publish_pending = published == 0
+                        logger.info(
+                            "automatic_challenge_created_on_startup",
+                            challenge_id=str(challenge.id),
+                            published_channels=published,
+                            retry_pending=startup_publish_pending,
+                        )
+                    elif not active:
                         latest = await session.scalar(select(Challenge).order_by(desc(Challenge.created_at)).limit(1))
                         due = (
                             latest is None
