@@ -477,7 +477,7 @@ async def run_challenge_scheduler() -> None:
     from app.services.challenges.public_bot import get_public_bot_username
 
     process_started_at = datetime.now(timezone.utc)
-    startup_publish_pending = bool(settings.CHALLENGE_AUTO_ENABLED)
+    startup_publish_pending = False  # Do not create a new challenge on every service restart
 
     logger.info(
         "challenge_scheduler_started",
@@ -534,7 +534,11 @@ async def run_challenge_scheduler() -> None:
                         latest = await session.scalar(select(Challenge).order_by(desc(Challenge.created_at)).limit(1))
                         due = (
                             latest is None
-                            or latest.status == "publish_failed"
+                            or (
+                                latest.status == "publish_failed"
+                                and latest.created_at
+                                < datetime.now(timezone.utc) - timedelta(hours=1)
+                            )
                             or latest.created_at
                             < datetime.now(timezone.utc) - timedelta(hours=settings.CHALLENGE_INTERVAL_HOURS)
                             or latest.language != "en"
