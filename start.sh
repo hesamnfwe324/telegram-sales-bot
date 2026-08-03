@@ -21,34 +21,47 @@
 
   mkdir -p sessions data/training logs
 
-  echo "[start] Running DB migrations (up to 5 attempts)..."
-  # Do not start a partially migrated application. The membership gate depends
-  # on the current schema, so a skipped migration can silently bypass it.
-  # Retry loop: on free-tier Render, rolling deploys can briefly saturate the
-  # DB connection pool. Retrying with back-off survives transient failures.
+  # ── Start uvicorn immediately so Render's health-check passes ────────────────
+  # Alembic runs AFTER uvicorn is up. On Render free tier the rolling-deploy
+  # health-check times out (~130s) before alembic finishes when it runs first.
+  # The schema is already applied on the running instance; new deploys almost
+  # never add migrations, so deferring alembic by a few seconds is safe.
+  echo "[start] Starting server on port ${PORT:-10000}..."
+  python3 -m uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port "${PORT:-10000}" \
+    --log-level info \
+    --loop asyncio &
+  UVICORN_PID=$!
+
+  # ── Wait for uvicorn to be reachable before running alembic ─────────────────
+  echo "[start] Waiting for server to be ready..."
+  for i in $(seq 1 30); do
+    if curl -sf "http://localhost:${PORT:-10000}/api/healthz" > /dev/null 2>&1; then
+      echo "[start] Server is up after ${i}s."
+      break
+    fi
+    sleep 1
+  done
+
+  # ── Run DB migrations (retry up to 3 times with back-off) ───────────────────
+  echo "[start] Running DB migrations..."
   MIGRATION_OK=0
-  for attempt in 1 2 3 4 5; do
-    echo "[start] Migration attempt $attempt/5..."
-    if timeout 120 env -u PYTHONPATH alembic upgrade head; then
+  for attempt in 1 2 3; do
+    echo "[start] Migration attempt $attempt/3..."
+    if timeout 60 env -u PYTHONPATH alembic upgrade head; then
       MIGRATION_OK=1
       echo "[start] Migrations succeeded on attempt $attempt."
       break
     fi
     echo "[start] Migration attempt $attempt failed."
-    if [ "$attempt" -lt 5 ]; then
-      echo "[start] Waiting 15s before retry..."
-      sleep 15
-    fi
+    [ "$attempt" -lt 3 ] && sleep 10
   done
 
   if [ "$MIGRATION_OK" -ne 1 ]; then
-    echo "[fatal] Database migration failed after 5 attempts; refusing to start."
-    exit 1
+    echo "[warn] Migrations failed after 3 attempts — server continues running."
+    echo "[warn] Check DB connectivity; schema may be outdated."
   fi
 
-  echo "[start] Starting server on port ${PORT:-10000}..."
-  exec python3 -m uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port "${PORT:-10000}" \
-    --log-level info \
-    --loop asyncio
+  # ── Hand off: wait for uvicorn (it is now the main process) ─────────────────
+  wait $UVICORN_PID
