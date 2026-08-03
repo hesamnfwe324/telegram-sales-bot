@@ -2,7 +2,6 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.userbot.session_manager import get_session_path
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -21,10 +20,15 @@ class UserBotClient:
         self._session_string = session_string  # keep for creating proxy-specific clients
         self._is_connected = False
 
-        if session_string:
-            session = StringSession(session_string)
-        else:
-            session = get_session_path(phone)
+        # Bug 1 fix: session_string is REQUIRED — Render's disk is ephemeral, so file-based
+        # sessions are wiped on every deploy/restart. Always load from the DB-stored string.
+        if not session_string:
+            raise ValueError(
+                f"No session_string found in DB for account {phone}. "
+                "Generate a session string via the session-gen tool and persist it "
+                "in the telegram_accounts table before activating this account."
+            )
+        session = StringSession(session_string)
 
         client_kwargs = dict(
             device_model="Linux Server",
@@ -32,11 +36,11 @@ class UserBotClient:
             app_version="1.0.0",
             lang_code="en",
             system_lang_code="en",
-            connection_retries=None,
+            connection_retries=3,         # Bug 6 fix: was None → infinite hang; 3 finite retries
             retry_delay=1,
             timeout=60,
             request_retries=1,
-            flood_sleep_threshold=0,
+            flood_sleep_threshold=60,     # Bug 3 fix: was 0 → crash on FloodWait; 60 = auto-sleep
         )
         if proxy:
             client_kwargs["proxy"] = proxy
