@@ -58,6 +58,16 @@ async def get_redis() -> aioredis.Redis:
 
     _redis_last_attempt = now
 
+    # Render deployments may intentionally omit Redis. Use the in-process
+    # fallback directly instead of attempting localhost:6379 and logging a
+    # misleading connection-refused error on every cold start.
+    if not (settings.REDIS_URL or "").strip():
+        import fakeredis.aioredis as fakeredis_mod
+        _redis_client = fakeredis_mod.FakeRedis(decode_responses=True)
+        _redis_is_real = False
+        logger.info("redis_not_configured_using_fakeredis")
+        return _redis_client
+
     try:
         client = aioredis.from_url(settings.REDIS_URL or "", **_build_redis_kwargs())
         await client.ping()
