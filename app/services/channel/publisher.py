@@ -31,6 +31,7 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".gif"}
 
 # ── UPGRADE TEAM brand banner ─ always sent with every channel post ────────────────
 _BANNER_REL_PATH = "app/assets/upgrade_team_banner.jpg"
+_CHALLENGE_BANNER_REL_PATH = "app/assets/challenge_banner.jpg"
 
 # Admin URL for inline URL buttons (added via Bot API after userbot posts)
 _ADMIN_URL = "https://t.me/vps24h"
@@ -424,9 +425,11 @@ async def publish_post(
                                    path=rel_path, channel_id=str(channel_id))
 
             if not media_bytes:
-                media_bytes = _read_local_file(_BANNER_REL_PATH)
+                banner_path = _CHALLENGE_BANNER_REL_PATH if post.content_type == "challenge" else _BANNER_REL_PATH
+                banner_name = "challenge_banner.jpg" if post.content_type == "challenge" else "upgrade_team_banner.jpg"
+                media_bytes = _read_local_file(banner_path)
                 if media_bytes:
-                    media_file_name = "upgrade_team_banner.jpg"
+                    media_file_name = banner_name
                     logger.info("media_loaded_from_banner", size_kb=len(media_bytes) // 1024)
 
             if not media_bytes and post.image_url and not post.image_url.startswith(_FILE_MARKER):
@@ -539,3 +542,4 @@ async def publish_post(
     logger.info("post_publish_complete", post_id=str(post.id),
                 published=published_count, total=len(channel_ids))
     return results
+
