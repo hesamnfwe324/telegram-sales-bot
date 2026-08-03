@@ -182,9 +182,27 @@ def _clean_json(text: str) -> dict[str, Any]:
     return json.loads(payload)
 
 
+import re as _re
+
 def _is_english_only(value: str) -> bool:
-    """Reject Arabic/Persian and other non-ASCII script in public challenge copy."""
-    return all(ord(character) < 128 for character in value)
+    """Reject Arabic, Persian, CJK, Cyrillic, and other non-Latin-script text.
+
+    Allows em dashes, smart quotes, bullet points, currency symbols, and other
+    common typographic Unicode that LLMs naturally produce in English prose.
+    Only blocks specific script ranges that indicate non-English languages.
+    """
+    return not _re.search(
+        r"[\u0600-\u06FF"   # Arabic / Persian
+        r"\u0750-\u077F"    # Arabic Supplement
+        r"\u4E00-\u9FFF"    # CJK Unified Ideographs
+        r"\u3040-\u30FF"    # Hiragana / Katakana
+        r"\uAC00-\uD7AF"    # Hangul
+        r"\u0400-\u04FF"    # Cyrillic
+        r"\u0590-\u05FF"    # Hebrew
+        r"\u0E00-\u0E7F"    # Thai
+        r"\u0900-\u097F]",  # Devanagari
+        value,
+    )
 
 
 def _validate_content(content: dict[str, Any], topic: str, language: str) -> dict[str, Any]:
