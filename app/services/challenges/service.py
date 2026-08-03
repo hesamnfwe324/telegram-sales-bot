@@ -13,7 +13,7 @@ from app.models.challenge import Challenge, ChallengeParticipant
 from app.models.channel import TelegramChannel
 from app.models.post import Post
 from app.models.public_user import PublicUser
-from app.services.challenges.generator import generate_challenge_content
+from app.services.challenges.generator import generate_challenge_content, pick_next_topic
 
 logger = get_logger(__name__)
 
@@ -106,21 +106,26 @@ async def accept_terms(
 
 
 def build_announcement(content: dict[str, Any], slug: str, username: str | None, ends_at: datetime) -> str:
-    end_text = ends_at.strftime("%Y-%m-%d %H:%M UTC")
+    end_text = ends_at.strftime("%b %d, %H:%M UTC")
     hashtags = " ".join(content.get("hashtags", []))
     link = _public_start_link(slug, username)
+    answers = content.get("answers", [])
+    answer_labels = ["A", "B", "C", "D"]
+    options_block = "\n".join(
+        f"   {answer_labels[i]}. {ans}"
+        for i, ans in enumerate(answers[:4])
+    )
     return (
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "        UPGRADE TEAM\n"
-        "      RDP SECURITY CHALLENGE\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🎯 {content['title']}\n\n"
-        f"💡 {content['question']}\n\n"
-        f"🎁 Reward: {content['reward']}\n"
-        f"⏱ Deadline: {end_text}\n\n"
-        "Join the challenge through the official bot:\n"
-        f"👉 {link}\n\n"
-        "✅ One attempt per participant. Winners are selected by correctness and response time.\n\n"
+        "⚡ NEW CHALLENGE IS LIVE — UPGRADE TEAM\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔥 {content['title']}\n\n"
+        f"📌 {content['question']}\n\n"
+        f"Choose your answer:\n{options_block}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🏆 Prize: {content['reward']}\n"
+        f"⏳ Closes: {end_text}  |  One answer per user\n"
+        f"🚀 Speed matters — fastest correct wins!\n\n"
+        f"👇 TAP TO ANSWER NOW:\n{link}\n\n"
         f"{hashtags}"
     )
 
@@ -164,7 +169,15 @@ async def create_challenge(
         use_bot_api = True
         logger.info("challenge_using_bot_api_fallback", channels=bot_api_channels)
 
-    content = await generate_challenge_content(topic, "en")
+    # Fetch recent challenge titles to pass as anti-repetition context to the AI
+    recent_rows = await session.execute(
+        select(Challenge.title)
+        .order_by(desc(Challenge.created_at))
+        .limit(20)
+    )
+    recent_titles = [row[0] for row in recent_rows.all() if row[0]]
+
+    content = await generate_challenge_content(topic, "en", recent_titles=recent_titles)
     now = datetime.now(timezone.utc)
     ends_at = now + timedelta(hours=settings.CHALLENGE_DURATION_HOURS)
     slug = _slugify(topic)
@@ -477,13 +490,15 @@ async def run_challenge_scheduler() -> None:
                             or latest.language != "en"
                         )
                         if due:
+                            # Fetch recent titles so pick_next_topic can avoid repetition
+                            recent_rows = await session.execute(
+                                select(Challenge.title).order_by(desc(Challenge.created_at)).limit(20)
+                            )
+                            recent_titles_for_topic = [r[0] for r in recent_rows.all() if r[0]]
+                            auto_topic = pick_next_topic(recent_titles_for_topic)
                             challenge, _ = await create_and_publish_challenge(
                                 session,
-                                topic=(
-                                    "AI-selected RDP challenge: choose the most engaging, "
-                                    "practical and surprising angle for RDP, VPS reliability, "
-                                    "remote access or server security"
-                                ),
+                                topic=auto_topic,
                                 language="en",
                                 public_bot_username=get_public_bot_username(),
                             )
