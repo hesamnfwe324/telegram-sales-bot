@@ -1,7 +1,9 @@
 import asyncio
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI
 
 _import_error: str = ""
@@ -54,6 +56,7 @@ _userbot_task: asyncio.Task | None = None
 _auto_poster_task: asyncio.Task | None = None
 _rdp_pool_task: asyncio.Task | None = None
 _challenge_task: asyncio.Task | None = None
+_maintenance_task: asyncio.Task | None = None
 _bg_init_task: asyncio.Task | None = None
 _keep_alive_task: asyncio.Task | None = None
 
@@ -97,6 +100,68 @@ async def _keep_alive_loop() -> None:
             except Exception as e:
                 logger.warning("keep_alive_ping_failed", url=url, error=str(e))
         await asyncio.sleep(KEEP_ALIVE_INTERVAL)
+
+
+async def _web_maintenance_loop() -> None:
+    """Run essential periodic jobs when Render has no separate ARQ worker.
+
+    The Render service currently runs the web process only. Scheduled posts
+    therefore need a small in-process safety net. If REDIS_QUEUE_URL is later
+    configured for the dedicated worker, this loop stays idle to avoid running
+    jobs twice.
+    """
+    from app.cache.redis_client import cache_get
+    from app.db.session import AsyncSessionLocal
+    from app.services.channel.scheduler import process_scheduled_posts
+
+    worker_configured = bool((settings.REDIS_QUEUE_URL or "").strip())
+    if worker_configured:
+        logger.info("web_maintenance_scheduler_idle_worker_configured")
+        return
+
+    logger.info("web_maintenance_scheduler_started", interval_sec=60)
+    last_metrics_at = 0.0
+    last_health_at = 0.0
+    last_daily_job_slot: str | None = None
+
+    while True:
+        try:
+            if not await cache_get("system:posting_paused"):
+                async with AsyncSessionLocal() as session:
+                    published = await process_scheduled_posts(session)
+                if published:
+                    logger.info("web_scheduled_posts_processed", published=published)
+
+            now = datetime.now(timezone.utc)
+            monotonic_now = time.monotonic()
+
+            if monotonic_now - last_metrics_at >= 300:
+                from app.workers.tasks.monitoring import task_collect_metrics
+                await task_collect_metrics(None)
+                last_metrics_at = monotonic_now
+
+            if monotonic_now - last_health_at >= 1800:
+                from app.workers.tasks.monitoring import task_system_health_check
+                await task_system_health_check(None)
+                last_health_at = monotonic_now
+
+            daily_slot = f"{now.date().isoformat()}:{now.hour}"
+            if now.minute == 0 and now.hour in {9, 14, 18} and daily_slot != last_daily_job_slot:
+                from app.workers.tasks.followup import task_process_followups
+                await task_process_followups(None)
+                last_daily_job_slot = daily_slot
+
+            learning_slot = f"learning:{now.date().isoformat()}"
+            if now.hour == 3 and now.minute == 0 and last_daily_job_slot != learning_slot:
+                from app.workers.tasks.learning import task_analyze_conversations
+                await task_analyze_conversations(None)
+                last_daily_job_slot = learning_slot
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("web_maintenance_scheduler_failed", error=str(exc))
+
+        await asyncio.sleep(60)
 
 
 async def _timed(coro, name: str, timeout: float) -> bool:
@@ -193,6 +258,7 @@ async def lifespan(app: FastAPI):
 
     # Start keep-alive loop immediately so Render never sleeps
     _keep_alive_task = asyncio.create_task(_keep_alive_loop())
+    _maintenance_task = asyncio.create_task(_web_maintenance_loop())
 
     _bg_init_task = asyncio.create_task(_background_init())
 
@@ -204,7 +270,7 @@ async def lifespan(app: FastAPI):
         return
     logger.info("application_shutting_down")
 
-    for task in (_keep_alive_task, _bg_init_task):
+    for task in (_keep_alive_task, _maintenance_task, _bg_init_task):
         if task and not task.done():
             task.cancel()
             try:
