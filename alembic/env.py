@@ -49,7 +49,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     section = config.get_section(config.config_ini_section, {})
-    connect_args: dict = {"timeout": 5}
+    # Increased from 5s to 30s: on Render free tier, rolling deploys can briefly
+    # saturate the DB connection pool. 30s gives enough headroom to wait for a
+    # connection slot without the start.sh retry loop burning through attempts too fast.
+    connect_args: dict = {"timeout": 30}
     if _use_ssl:
         connect_args["ssl"] = _make_ssl_ctx()
     connectable = async_engine_from_config(
