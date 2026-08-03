@@ -45,7 +45,7 @@ COOLDOWN_SECONDS = MIN_INTERVAL_SECONDS
 
 # If any channel's cooldown expires within this window, wait for it so all
 # channels post in a single synchronised batch instead of drifting apart.
-SYNC_WINDOW_SECONDS = 1200   # 20 minutes
+SYNC_WINDOW_SECONDS = 300    # 5 minutes — reduced from 20 min to prevent post bunching
 
 
 def _cooldown_key(channel_id: str) -> str:
