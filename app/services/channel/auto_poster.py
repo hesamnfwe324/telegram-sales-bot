@@ -54,14 +54,61 @@ def _cooldown_key(channel_id: str) -> str:
 async def get_cooldown_remaining(channel_id: str) -> int:
     from app.cache.redis_client import cache_get
     val = await cache_get(_cooldown_key(channel_id))
-    if not val:
-        return 0
+    if val:
+        try:
+            posted_at = float(val)
+            elapsed = _time.time() - posted_at
+            return max(0, int(COOLDOWN_SECONDS - elapsed))
+        except Exception:
+            pass
+
+    # Redis key missing (restart / eviction) — fall back to the Post table so
+    # the 3-hour cooldown survives Render/Redis restarts without a burst of posts.
     try:
-        posted_at = float(val)
-        elapsed = _time.time() - posted_at
-        return max(0, int(COOLDOWN_SECONDS - elapsed))
-    except Exception:
-        return 0
+        import json as _json
+        from sqlalchemy import select, cast
+        from sqlalchemy.dialects.postgresql import JSONB
+        from app.db.session import AsyncSessionLocal
+        from app.models.post import Post
+
+        async with AsyncSessionLocal() as _session:
+            row = await _session.scalar(
+                select(Post.published_at)
+                .where(
+                    Post.status == "published",
+                    Post.channel_ids.op("@>")(
+                        cast(_json.dumps([channel_id]), JSONB)
+                    ),
+                )
+                .order_by(Post.published_at.desc())
+                .limit(1)
+            )
+            if row is not None:
+                elapsed = _time.time() - row.timestamp()
+                remaining = max(0, int(COOLDOWN_SECONDS - elapsed))
+                if remaining > 0:
+                    logger.info(
+                        "autoposter_cooldown_restored_from_db",
+                        channel_id=channel_id,
+                        remaining_minutes=remaining // 60,
+                    )
+                    # Re-populate Redis so the next check is fast
+                    from app.cache.redis_client import cache_set
+                    synthetic_posted_at = _time.time() - elapsed
+                    await cache_set(
+                        _cooldown_key(channel_id),
+                        str(synthetic_posted_at),
+                        ttl=remaining + 60,
+                    )
+                return remaining
+    except Exception as _db_exc:
+        logger.warning(
+            "autoposter_cooldown_db_fallback_failed",
+            channel_id=channel_id,
+            error=str(_db_exc)[:120],
+        )
+
+    return 0
 
 
 def _lock_key(channel_id: str) -> str:
