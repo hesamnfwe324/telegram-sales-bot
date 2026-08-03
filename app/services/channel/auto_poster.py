@@ -52,65 +52,54 @@ def _cooldown_key(channel_id: str) -> str:
     return f"autoposter:cooldown:{channel_id}"
 
 
-async def get_cooldown_remaining(channel_id: str) -> int:
-    from app.cache.redis_client import cache_get
-    val = await cache_get(_cooldown_key(channel_id))
-    if val:
-        try:
-            posted_at = float(val)
-            elapsed = _time.time() - posted_at
-            return max(0, int(COOLDOWN_SECONDS - elapsed))
-        except Exception:
-            pass
+async def _get_db_auto_post_remaining(channel_id: str) -> int:
+    """Read the authoritative last VPS post time from PostgreSQL.
 
-    # Redis key missing (restart / eviction) — fall back to the Post table so
-    # the 3-hour cooldown survives Render/Redis restarts without a burst of posts.
+    This deliberately does not depend on Redis, which may be fakeredis on Render."""
     try:
-        import json as _json
-        from sqlalchemy import select, cast
-        from sqlalchemy.dialects.postgresql import JSONB
-        from app.db.session import AsyncSessionLocal
-        from app.models.post import Post
-
-        async with AsyncSessionLocal() as _session:
-            row = await _session.scalar(
-                select(Post.published_at)
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(
+                    Post.published_at, Post.channel_ids, Post.content_type, Post.image_url,
+                )
                 .where(
                     Post.status == "published",
-                    Post.channel_ids.op("@>")(
-                        cast(_json.dumps([channel_id]), JSONB)
-                    ),
+                    Post.published_at.is_not(None),
                 )
                 .order_by(Post.published_at.desc())
-                .limit(1)
+                .limit(1000)
             )
-            if row is not None:
-                elapsed = _time.time() - row.timestamp()
-                remaining = max(0, int(COOLDOWN_SECONDS - elapsed))
+            now = _time.time()
+            for published_at, channel_ids, content_type, image_url in result.all():
+                ids = {str(value) for value in (channel_ids or [])}
+                image_marker = str(image_url or "").lower()
+                is_auto_post = content_type == "rdp" or "rdp" in image_marker
+                if not is_auto_post or channel_id not in ids:
+                    continue
+                remaining = max(0, int(COOLDOWN_SECONDS - (now - published_at.timestamp())))
                 if remaining > 0:
-                    logger.info(
-                        "autoposter_cooldown_restored_from_db",
-                        channel_id=channel_id,
-                        remaining_minutes=remaining // 60,
-                    )
-                    # Re-populate Redis so the next check is fast
-                    from app.cache.redis_client import cache_set
-                    synthetic_posted_at = _time.time() - elapsed
-                    await cache_set(
-                        _cooldown_key(channel_id),
-                        str(synthetic_posted_at),
-                        ttl=remaining + 60,
-                    )
-                return remaining
-    except Exception as _db_exc:
-        logger.warning(
-            "autoposter_cooldown_db_fallback_failed",
-            channel_id=channel_id,
-            error=str(_db_exc)[:120],
-        )
-
+                    return remaining
+                return 0
+    except Exception as exc:
+        logger.warning("autoposter_db_cooldown_read_failed", channel_id=channel_id, error=str(exc)[:160])
     return 0
 
+
+async def get_cooldown_remaining(channel_id: str) -> int:
+    # PostgreSQL is authoritative. Redis can only add a conservative delay,
+    # never make a channel eligible earlier than its database timestamp.
+    db_remaining = await _get_db_auto_post_remaining(channel_id)
+    if db_remaining > 0:
+        return db_remaining
+    try:
+        from app.cache.redis_client import cache_get
+        val = await cache_get(_cooldown_key(channel_id))
+        if val:
+            posted_at = float(val)
+            return max(0, int(COOLDOWN_SECONDS - (_time.time() - posted_at)))
+    except Exception as exc:
+        logger.warning("autoposter_cache_cooldown_read_failed", channel_id=channel_id, error=str(exc)[:120])
+    return 0
 
 def _lock_key(channel_id: str) -> str:
     return f"autoposter:lock:{channel_id}"
@@ -240,6 +229,7 @@ async def _post_rdp_result_to_channel(rdp_result: dict, channel: TelegramChannel
                 content=rdp_content,
                 languages={lang: rdp_content},
                 image_url=rdp_image_url,
+                content_type="rdp",
                 status="scheduled",
                 scheduled_at=datetime.now(timezone.utc),
             )
@@ -334,10 +324,6 @@ async def _compute_cooldowns(channels) -> dict[str, int]:
 
 
 async def run_auto_poster(userbot_manager):
-    # Safety stop: do not send VPS/RDP posts until persistent 3-hour cooldown is verified.
-    if os.getenv("AUTO_POSTER_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
-        logger.warning("auto_poster_disabled_by_config")
-        return
     """
     Main auto-poster loop.
 
@@ -349,6 +335,10 @@ async def run_auto_poster(userbot_manager):
     scanning. This keeps all channels in a single synchronised batch and
     prevents permanent phase drift where a subset always posts alone.
     """
+    # Safety stop remains active until the verified cooldown implementation is deployed.
+    if os.getenv("AUTO_POSTER_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        logger.warning("auto_poster_disabled_by_config")
+        return
     logger.info("auto_poster_started — rdp_only_mode")
     await asyncio.sleep(30)
 
