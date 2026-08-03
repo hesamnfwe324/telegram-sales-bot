@@ -323,170 +323,186 @@ async def _compute_cooldowns(channels) -> dict[str, int]:
     return cooldowns
 
 
-async def run_auto_poster(userbot_manager):
-    """
-    Main auto-poster loop.
+    GLOBAL_COOLDOWN_KEY = "autoposter:global:last_posted"
 
-    FIX (original): scan ONCE per cycle, post to ALL ready channels so a
-    scan timeout on channel N never blocks channels N+1, N+2, ...
 
-    FIX (Jul 2026 — sync): if some channels are ready NOW and others will be
-    ready within SYNC_WINDOW_SECONDS (20 min), wait for the laggards before
-    scanning. This keeps all channels in a single synchronised batch and
-    prevents permanent phase drift where a subset always posts alone.
-    """
-    # Safety stop remains active until the verified cooldown implementation is deployed.
-    if os.getenv("AUTO_POSTER_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
-        logger.warning("auto_poster_disabled_by_config")
-        return
-    logger.info("auto_poster_started — rdp_only_mode")
-    await asyncio.sleep(30)
+    async def _get_global_cooldown_remaining() -> int:
+      """Return seconds until the next global auto-poster cycle is allowed.
 
-    while True:
-        try:
-            from app.cache.redis_client import cache_get
-            if await cache_get("system:posting_paused"):
-                logger.info("auto_poster_paused_sleeping_60s")
-                await asyncio.sleep(60)
-                continue
+      Uses Redis for fast lookup; falls back to PostgreSQL for persistence
+      across process restarts (Redis may be ephemeral on Render free tier).
+      """
+      try:
+          from app.cache.redis_client import cache_get
+          val = await cache_get(GLOBAL_COOLDOWN_KEY)
+          if val:
+              last_posted = float(val)
+              remaining = max(0, int(MIN_INTERVAL_SECONDS - (_time.time() - last_posted)))
+              if remaining > 0:
+                  return remaining
+      except Exception as exc:
+          logger.warning("autoposter_global_redis_read_failed", error=str(exc)[:120])
 
-            channels = await _get_active_channels()
-            if not channels:
-                await asyncio.sleep(300)
-                continue
+      # PostgreSQL fallback — most recent published RDP post across ALL channels
+      try:
+          async with AsyncSessionLocal() as session:
+              row = await session.scalar(
+                  select(Post.published_at)
+                  .where(
+                      Post.status == "published",
+                      Post.published_at.is_not(None),
+                      Post.content_type == "rdp",
+                  )
+                  .order_by(Post.published_at.desc())
+                  .limit(1)
+              )
+              if row:
+                  return max(0, int(MIN_INTERVAL_SECONDS - (_time.time() - row.timestamp())))
+      except Exception as exc:
+          logger.warning("autoposter_global_db_read_failed", error=str(exc)[:160])
 
-            # ── Step 1: Compute cooldowns for every channel ───────────────────
-            cooldowns = await _compute_cooldowns(channels)
+      return 0
 
-            ready_channels = [ch for ch in channels if cooldowns[str(ch.id)] == 0]
-            waiting_channels = [
-                (ch, cooldowns[str(ch.id)])
-                for ch in channels
-                if cooldowns[str(ch.id)] > 0
-            ]
 
-            for ch, rem in waiting_channels:
-                logger.info(
-                    "auto_poster_channel_cooldown",
-                    channel=ch.display_name,
-                    remaining_minutes=rem // 60,
-                )
+    async def mark_global_posted() -> None:
+      """Set the global 3-hour cooldown after a successful posting cycle."""
+      try:
+          from app.cache.redis_client import cache_set
+          await cache_set(GLOBAL_COOLDOWN_KEY, str(_time.time()), ttl=MIN_INTERVAL_SECONDS + 300)
+          logger.info("auto_poster_global_cooldown_set", interval_hours=MIN_INTERVAL_SECONDS // 3600)
+      except Exception as exc:
+          logger.warning("autoposter_global_mark_failed", error=str(exc)[:120])
 
-            # ── Step 2: Synchronisation gate ─────────────────────────────────
-            # If some channels are ready but others will be ready soon, wait
-            # for the stragglers so all channels post in one coherent batch.
-            # This prevents permanent phase-drift (e.g. 3 channels always
-            # posting 15–20 min before the other 11, and then being skipped).
-            if ready_channels and waiting_channels:
-                min_wait = min(rem for _, rem in waiting_channels)
-                if min_wait <= SYNC_WINDOW_SECONDS:
-                    logger.info(
-                        "auto_poster_sync_waiting",
-                        ready=len(ready_channels),
-                        waiting=len(waiting_channels),
-                        wait_seconds=min_wait,
-                        wait_minutes=round(min_wait / 60, 1),
-                    )
-                    await asyncio.sleep(min_wait + 5)   # +5s safety margin
-                    # Re-evaluate from the top with fresh cooldown data
-                    continue
 
-            if not ready_channels:
-                # All channels are on cooldown — check back in 10 min
-                logger.info("auto_poster_all_channels_on_cooldown", count=len(channels))
-                await asyncio.sleep(600)
-                continue
+    async def run_auto_poster(userbot_manager):
+      """
+      Main auto-poster loop — one global 3-hour cooldown for all channels.
 
-            # ── Step 3: Fetch one unique RDP result per ready channel ────────
-            # Each channel gets a DIFFERENT server (different IP + country).
-            # scan_for_rdp() pops randomly from the Redis pool, so every call
-            # returns a distinct IP. We pre-fetch all results before posting
-            # so a timeout on one channel never blocks the others.
-            #
-            # FALLBACK: when the pool runs dry and inline scan also fails,
-            # reuse the last successfully fetched result from this cycle so
-            # every ready channel still gets a post instead of being skipped.
-            from app.services.scanner.rdp_scanner import scan_for_rdp
+      ALL active channels post together in a single batch every 3 hours.
+      A single global timer replaces the previous per-channel timers that caused
+      posts to drift apart and stack up throughout the day.
+      """
+      if os.getenv("AUTO_POSTER_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+          logger.warning("auto_poster_disabled_by_config")
+          return
+      logger.info("auto_poster_started — rdp_only_mode, global_cooldown_hours=3")
+      await asyncio.sleep(30)
 
-            channel_results: list[tuple] = []   # (channel, rdp_result)
-            _last_good_rdp: dict | None = None   # fallback when pool is dry
+      while True:
+          try:
+              from app.cache.redis_client import cache_get
+              if await cache_get("system:posting_paused"):
+                  logger.info("auto_poster_paused_sleeping_60s")
+                  await asyncio.sleep(60)
+                  continue
 
-            for ch in ready_channels:
-                try:
-                    rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
-                    if rdp_result:
-                        _last_good_rdp = rdp_result
-                        channel_results.append((ch, rdp_result))
-                        logger.info(
-                            "auto_poster_rdp_fetched",
-                            channel=ch.display_name,
-                            ip=rdp_result["ip"],
-                            country=rdp_result["country_name"],
-                        )
-                    elif _last_good_rdp:
-                        # Pool empty for this channel — reuse earlier result
-                        channel_results.append((ch, _last_good_rdp))
-                        logger.info(
-                            "auto_poster_rdp_pool_dry_using_fallback",
-                            channel=ch.display_name,
-                            ip=_last_good_rdp["ip"],
-                        )
-                    else:
-                        logger.info(
-                            "auto_poster_rdp_no_result_skipping_channel",
-                            channel=ch.display_name,
-                        )
-                except asyncio.TimeoutError:
-                    if _last_good_rdp:
-                        channel_results.append((ch, _last_good_rdp))
-                        logger.info(
-                            "auto_poster_rdp_timeout_using_fallback",
-                            channel=ch.display_name,
-                            ip=_last_good_rdp["ip"],
-                        )
-                    else:
-                        logger.warning(
-                            "auto_poster_rdp_scan_timeout_skipping_channel",
-                            channel=ch.display_name,
-                        )
-                except Exception as scan_err:
-                    logger.error(
-                        "auto_poster_rdp_scan_error_skipping_channel",
-                        channel=ch.display_name,
-                        error=str(scan_err),
-                    )
+              # ── Global 3-hour cooldown ────────────────────────────────────────
+              # All channels share ONE timer.  When it expires, every active channel
+              # gets a post simultaneously — no per-channel drift.
+              global_remaining = await _get_global_cooldown_remaining()
+              if global_remaining > 0:
+                  sleep_secs = min(global_remaining, 900)  # re-check at most every 15 min
+                  logger.info(
+                      "auto_poster_global_cooldown_active",
+                      remaining_minutes=round(global_remaining / 60, 1),
+                      sleeping_minutes=round(sleep_secs / 60, 1),
+                  )
+                  await asyncio.sleep(sleep_secs)
+                  continue
 
-            if not channel_results:
-                logger.info("auto_poster_rdp_no_results_sleeping_5min")
-                await asyncio.sleep(300)
-                continue
+              # ── Cooldown expired — collect all active channels ────────────────
+              channels = await _get_active_channels()
+              if not channels:
+                  logger.info("auto_poster_no_active_channels_sleeping_5min")
+                  await asyncio.sleep(300)
+                  continue
 
-            logger.info(
-                "auto_poster_rdp_fetch_done",
-                fetched=len(channel_results),
-                ready_channels=len(ready_channels),
-            )
+              logger.info("auto_poster_cycle_starting", channels=len(channels))
 
-            # ── Step 4: Post each channel's unique server ─────────────────────
-            posted = 0
-            for ch, rdp_result in channel_results:
-                success = await _post_rdp_result_to_channel(rdp_result, ch)
-                if success:
-                    await mark_channel_posted(str(ch.id))
-                    posted += 1
-                    # Randomised pause between channels — long enough to avoid
-                    # Telegram flood limits when posting to many channels.
-                    await asyncio.sleep(random.randint(8, 15))
+              # ── Fetch one unique RDP result per channel ───────────────────────
+              from app.services.scanner.rdp_scanner import scan_for_rdp
 
-            logger.info("auto_poster_cycle_done", posted=posted, total_ready=len(ready_channels))
+              channel_results: list[tuple] = []
+              _last_good_rdp: dict | None = None
 
-            # ── Step 5: Sleep before next cycle ──────────────────────────────
-            # 15 min if we posted something, 10 min if all failed
-            await asyncio.sleep(900 if posted > 0 else 600)
+              for ch in channels:
+                  try:
+                      rdp_result = await asyncio.wait_for(scan_for_rdp(), timeout=45.0)
+                      if rdp_result:
+                          _last_good_rdp = rdp_result
+                          channel_results.append((ch, rdp_result))
+                          logger.info(
+                              "auto_poster_rdp_fetched",
+                              channel=ch.display_name,
+                              ip=rdp_result["ip"],
+                              country=rdp_result["country_name"],
+                          )
+                      elif _last_good_rdp:
+                          channel_results.append((ch, _last_good_rdp))
+                          logger.info(
+                              "auto_poster_rdp_pool_dry_using_fallback",
+                              channel=ch.display_name,
+                              ip=_last_good_rdp["ip"],
+                          )
+                      else:
+                          logger.info(
+                              "auto_poster_rdp_no_result_skipping_channel",
+                              channel=ch.display_name,
+                          )
+                  except asyncio.TimeoutError:
+                      if _last_good_rdp:
+                          channel_results.append((ch, _last_good_rdp))
+                          logger.info(
+                              "auto_poster_rdp_timeout_using_fallback",
+                              channel=ch.display_name,
+                              ip=_last_good_rdp["ip"],
+                          )
+                      else:
+                          logger.warning(
+                              "auto_poster_rdp_scan_timeout_skipping_channel",
+                              channel=ch.display_name,
+                          )
+                  except Exception as scan_err:
+                      logger.error(
+                          "auto_poster_rdp_scan_error_skipping_channel",
+                          channel=ch.display_name,
+                          error=str(scan_err),
+                      )
 
-        except asyncio.CancelledError:
-            logger.info("auto_poster_cancelled")
-            break
-        except Exception as e:
-            logger.error("auto_poster_error", error=str(e))
-            await asyncio.sleep(120)
+              if not channel_results:
+                  logger.info("auto_poster_rdp_no_results_sleeping_5min")
+                  await asyncio.sleep(300)
+                  continue
+
+              logger.info(
+                  "auto_poster_rdp_fetch_done",
+                  fetched=len(channel_results),
+                  total_channels=len(channels),
+              )
+
+              # ── Post each channel's unique server ─────────────────────────────
+              posted = 0
+              for ch, rdp_result in channel_results:
+                  success = await _post_rdp_result_to_channel(rdp_result, ch)
+                  if success:
+                      await mark_channel_posted(str(ch.id))
+                      posted += 1
+                      # Pause between channels to avoid Telegram flood limits
+                      await asyncio.sleep(random.randint(8, 15))
+
+              logger.info("auto_poster_cycle_done", posted=posted, total=len(channels))
+
+              # Set global 3-hour cooldown — next batch will fire in 3 hours
+              if posted > 0:
+                  await mark_global_posted()
+
+              # Sleep 15 min then re-check (global cooldown will gate posting)
+              await asyncio.sleep(900)
+
+          except asyncio.CancelledError:
+              logger.info("auto_poster_cancelled")
+              break
+          except Exception as e:
+              logger.error("auto_poster_error", error=str(e))
+              await asyncio.sleep(120)
+    
