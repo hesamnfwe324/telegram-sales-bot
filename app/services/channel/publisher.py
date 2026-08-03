@@ -60,9 +60,17 @@ async def _add_contact_button(channel_id: str | int, message_id: int) -> None:
             )
             data = resp.json()
             if not data.get("ok"):
-                logger.warning("add_contact_button_failed", channel_id=str(channel_id), reason=data.get("description"))
+                reason = data.get("description") or "telegram_api_error"
+                # The userbot may still publish successfully when the admin bot
+                # cannot edit a channel message. Treat that optional button as
+                # non-fatal and avoid repeating noisy warnings for stale access.
+                event = "add_contact_button_skipped" if any(
+                    marker in reason.lower()
+                    for marker in ("chat not found", "message to edit not found", "not enough rights")
+                ) else "add_contact_button_failed"
+                logger.info(event, channel_id=str(channel_id), reason=reason)
     except Exception as exc:
-        logger.warning("add_contact_button_exception", channel_id=str(channel_id), error=repr(exc))
+        logger.info("add_contact_button_skipped", channel_id=str(channel_id), reason=repr(exc))
 
 # ── Admin signatures ─────────────────────────────────────────────────────
 ADMIN_SIGNATURES = [

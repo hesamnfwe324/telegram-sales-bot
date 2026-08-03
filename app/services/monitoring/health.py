@@ -1,6 +1,7 @@
 from app.cache.redis_client import get_redis
 from app.db.base import engine
 from app.services.ai.engine import check_ai_health
+from app.core.config import settings
 from app.core.logging import get_logger
 from sqlalchemy import text
 import asyncio
@@ -29,6 +30,10 @@ async def check_redis() -> dict:
 
 
 async def check_ai() -> dict:
+    # AI generation is optional: challenge generation has a safe fallback,
+    # so an unset provider must not make the whole service look unhealthy.
+    if not (settings.GROQ_API_KEY or settings.OPENAI_API_KEY):
+        return {"status": "disabled", "reason": "no_ai_provider_configured"}
     healthy = await check_ai_health()
     return {"status": "ok" if healthy else "error"}
 
