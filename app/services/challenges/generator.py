@@ -322,13 +322,13 @@ Topic angle to explore: {topic}
 Return EXACTLY this JSON (no extra keys):
 {{
   "title": "A punchy story-style title, 5-9 words, no question mark. Like: 'The $800 Bandwidth Surprise' or 'Why Swap Killed the VPS'",
-  "question": "2-4 sentences: (1) set the scene with specifics, (2) describe the problem vividly, (3) state the decision question clearly.",
-  "learning_note": "2-3 sentences of the 'aha!' insight: WHY the correct answer is right, what hidden mechanism explains it, and one practical tip the reader can use tomorrow.",
+  "question": "MAX 2 sentences (under 250 characters total): one sentence sets the scene with a specific detail, one sentence asks the decision question. Be vivid but SHORT.",
+  "learning_note": "2-3 sentences explaining WHY the correct answer is right and the key insight the reader should remember.",
   "answers": [
-    "Specific, technically plausible option A",
-    "Specific, technically plausible option B",
-    "Specific, technically plausible option C",
-    "Specific, technically plausible option D"
+    "Short, specific option — max 70 characters",
+    "Short, specific option — max 70 characters",
+    "Short, specific option — max 70 characters",
+    "Short, specific option — max 70 characters"
   ],
   "correct_answer": 2,
   "reward": "Top 3 fastest correct answers win [specific attractive VPS/RDP prize] — results posted in 4 hours",
