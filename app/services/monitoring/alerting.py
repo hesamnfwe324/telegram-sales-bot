@@ -18,7 +18,7 @@ SEVERITY_EMOJI = {
     "success": "🟢",
 }
 
-COOLDOWN_TTL = 300
+COOLDOWN_TTL = 3600
 
 
 def set_alert_sender(func) -> None:
@@ -42,8 +42,13 @@ async def send_alert(
     message: str,
     context: dict = None,
     cooldown: bool = True,
+    dedup_key: str = None,
 ) -> None:
-    cooldown_key = f"{alert_type}:{message[:40]}"
+    # Use a stable dedup_key when provided instead of the raw message, since
+    # messages that embed a fluctuating value (e.g. "CPU usage: 88.7%") would
+    # otherwise produce a different cooldown key almost every time, making the
+    # cooldown never actually suppress repeat alerts for the same condition.
+    cooldown_key = f"{alert_type}:{dedup_key or message[:40]}"
     if cooldown and await _is_on_cooldown(cooldown_key):
         logger.debug("alert_suppressed_cooldown", key=cooldown_key)
         return
@@ -92,6 +97,7 @@ async def check_system_thresholds() -> None:
             severity, "system",
             f"CPU usage {severity}: {cpu:.1f}%",
             {"cpu": cpu, "threshold": settings.ALERT_CPU_THRESHOLD},
+            dedup_key="cpu",
         )
 
     if ram_pct > settings.ALERT_RAM_THRESHOLD:
@@ -100,6 +106,7 @@ async def check_system_thresholds() -> None:
             severity, "system",
             f"RAM usage {severity}: {ram_pct:.1f}%",
             {"ram_percent": ram_pct, "used_gb": metrics["ram"]["used_gb"]},
+            dedup_key="ram",
         )
 
     if disk_pct > settings.ALERT_DISK_THRESHOLD:
@@ -108,6 +115,7 @@ async def check_system_thresholds() -> None:
             severity, "system",
             f"Disk usage {severity}: {disk_pct:.1f}%",
             {"disk_percent": disk_pct, "used_gb": metrics["disk"]["used_gb"]},
+            dedup_key="disk",
         )
 
 
